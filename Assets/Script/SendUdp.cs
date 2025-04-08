@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Net.Sockets;
 using PassthroughCameraSamples;
+using TMPro;
 using UnityEngine;
 
 public class SendUdp : MonoBehaviour
@@ -10,26 +11,55 @@ public class SendUdp : MonoBehaviour
 
     private UdpClient udpClient;
 
+    private bool isSending = false;
+    private Coroutine coruSend;
+
+    private string ip = "192.168.210.18";
+    private int port = 12345;
+
     private IEnumerator Start()
     {
         udpClient = new UdpClient();
         udpClient.Client.SendBufferSize = 65507; // Max dimensione UDP
-        
         while (manager.WebCamTexture == null)
         {
-          
             yield return null;
         }
         
-      
-        StartCoroutine(CaptureFrames());
+    }
+
+    public void toggleSendStream()
+    {
+        if (!isSending)
+        {
+            coruSend = StartCoroutine(CaptureFrames());
+        }
+        else
+        {
+            StopCoroutine(coruSend);
+        }
+
+        isSending = !isSending;
+    }
+
+    public void setIP(string ip)
+    {
+        Debug.Log("passato: " +ip);
+        this.ip = ip;
+    }
+
+    public void setport(string port)
+    {
+        if (int.TryParse(port, out int risultato))
+        {
+            this.port = risultato;
+        }
     }
 
     IEnumerator CaptureFrames()
     {
         while (true)
         {
-            
             yield return new WaitForEndOfFrame();
 
             var screen = manager.WebCamTexture;
@@ -73,7 +103,7 @@ public class SendUdp : MonoBehaviour
                 Buffer.BlockCopy(BitConverter.GetBytes(i), 0, chunk, 1, 4);
                 Buffer.BlockCopy(frameData, offset, chunk, 5, chunkSize);
 
-                udpClient.Send(chunk, chunk.Length, "192.168.84.71", 12345);
+                udpClient.Send(chunk, chunk.Length, ip, port);
             }
         }
         catch (Exception e)
