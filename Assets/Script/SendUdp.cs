@@ -13,7 +13,7 @@ public class SendUdp : MonoBehaviour
     private bool isSending = false;
     private Coroutine coruSend;
 
-    private string ip = "192.168.210.18";
+    private string ip = "192.168.204.71";
     private int port = 12345;
 
     private Texture2D reusableTexture;
