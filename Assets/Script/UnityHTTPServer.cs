@@ -27,6 +27,9 @@ public class UnityHTTPServer : MonoBehaviour
     // Riferimento al DetectionManager per aggiornare gli indicatori
     // public DetectionManager detectionManager; // Assegna questo nel Inspector
 
+    // Riferimento a PaintingPlacer per piazzare i quadri
+    public PaintingPlacer paintingPlacer;
+
     void Start()
     {
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -240,16 +243,21 @@ public class UnityHTTPServer : MonoBehaviour
                 var dispatcher = UnityMainThreadDispatcher.Instance();
                 if (dispatcher != null)
                 {
-                    // Cattura la variabile per utilizzarla nella chiusura
                     string capturedRequestBody = requestBody;
                     dispatcher.Enqueue(() =>
                     {
                         try
                         {
                             if(debugText != null) debugText.text += "\n" + capturedRequestBody;
-                            // Qui puoi deserializzare i dati se necessario, ad esempio con JsonUtility
-                            // MyDetectionData data = JsonUtility.FromJson<MyDetectionData>(capturedRequestBody);
-                            // detectionManager.UpdateDetectionIndicators(data);
+                            // Chiamata diretta al piazzamento quadri
+                            if (paintingPlacer != null)
+                            {
+                                paintingPlacer.PlacePaintingsFromJsonString(capturedRequestBody);
+                            }
+                            else
+                            {
+                                Debug.LogError("paintingPlacer non assegnato su UnityHTTPServer!");
+                            }
                         }
                         catch (Exception e)
                         {

@@ -3,6 +3,7 @@ using System.Collections;
 using System.Net.Sockets;
 using System.Threading.Tasks;
 using PassthroughCameraSamples;
+using TMPro;
 using UnityEngine;
 
 public class SendUdp : MonoBehaviour
@@ -19,6 +20,8 @@ public class SendUdp : MonoBehaviour
     private Texture2D reusableTexture;
     private Color32[] pixelBuffer;
     private WaitForSeconds frameDelay = new WaitForSeconds(0.1f); // 10 FPS
+    public TextMeshProUGUI debugText;
+    public OVRCameraRig ovrCameraRig; // Assign this in the Inspector
 
     private IEnumerator Start()
     {
@@ -40,6 +43,16 @@ public class SendUdp : MonoBehaviour
 
     public void toggleSendStream()
     {
+     
+        Vector3 cameraPosition = ovrCameraRig.centerEyeAnchor.position;
+        Quaternion cameraRotation = ovrCameraRig.centerEyeAnchor.rotation;
+
+        
+        Debug.Log($"Passthrough Camera Position: {cameraPosition}");
+        Debug.Log($"Passthrough Camera Rotation: {cameraRotation.eulerAngles}");
+
+        debugText.text = $"Visore Position: {cameraPosition}, Rotation: {cameraRotation.eulerAngles}";
+
         if (!isSending)
             coruSend = StartCoroutine(CaptureFrames());
         else
