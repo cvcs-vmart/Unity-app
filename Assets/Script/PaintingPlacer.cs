@@ -1,8 +1,35 @@
 using System;
+using Meta.XR;
+using PassthroughCameraSamples;
 using UnityEngine;
 
+// Contiene EnvironmentRaycastManager e RaycastHit
+
 [Serializable]
-public class DetectedQuadro
+public class PositionData
+{
+    public float x;
+    public float y;
+    public float z;
+}
+
+[Serializable]
+public class RotationData
+{
+    public float x;
+    public float y;
+    public float z;
+}
+
+[Serializable]
+public class CameraPoseData
+{
+    public PositionData position;
+    public RotationData rotation;
+}
+
+[Serializable]
+public class DetectedQuadroData
 {
     public string id;
     public float nx;
@@ -13,177 +40,118 @@ public class DetectedQuadro
 }
 
 [Serializable]
-public class Vector3Serializable
+public class DetectionInput
 {
-    public float x;
-    public float y;
-    public float z;
-
-    // Metodo per convertire facilmente in un Vector3 di Unity
-    public Vector3 ToUnityVector3()
-    {
-        return new Vector3(x, y, z);
-    }
-}
-
-[Serializable]
-public class QuaternionSerializable
-{
-    public float x;
-    public float y;
-    public float z;
-    public float w;
-
-    // Metodo per convertire facilmente in un Quaternion di Unity
-    public Quaternion ToUnityQuaternion()
-    {
-        
-        return new Quaternion(x, y, z, w);
-    }
-}
-
-[Serializable]
-public class EulerAnglesSerializable
-{
-    public float x; // pitch
-    public float y; // yaw
-    public float z; // roll
-
-    // Metodo per convertire facilmente in un Quaternion di Unity
-    public Quaternion ToUnityQuaternion()
-    {
-        return Quaternion.Euler(x, y, z);
-    }
-}
-
-[Serializable]
-public class CameraPose
-{
-    public Vector3Serializable position;
-    public EulerAnglesSerializable rotation; // Modificato da QuaternionSerializable a EulerAnglesSerializable
-}
-
-[Serializable]
-public class FrameData
-{
-    public DetectedQuadro[] detected_quadri;
-    public double frame_timestamp;
-    public CameraPose camera_pose;
+    public DetectedQuadroData[] detected_quadri;
+    public CameraPoseData camera_pose;
 }
 
 public class PaintingPlacer : MonoBehaviour
 {
-    [Tooltip("Incolla qui il JSON ricevuto dal server Python.")] [TextArea(15, 20)]
-    public string serverJson;
+    [Tooltip("Il prefab da istanziare nella scena.")]
+    public GameObject objectToPlace;
 
-    [Tooltip("Il prefab da usare per visualizzare il quadro. Dovrebbe essere un Quad di default.")]
-    public GameObject paintingPrefab;
+    [Tooltip("La distanza massima a cui il raggio cercherà una superficie reale.")]
+    public float maxPlacementDistance = 20f;
 
-    [Tooltip(
-        "La distanza presunta a cui posizionare i quadri dalla telecamera virtuale. Questo valore è cruciale e potrebbe richiedere aggiustamenti.")]
-    public float distanceFromCamera = 3.0f;
-    
-    public Camera camera;
+    private Camera mainCamera; // Potrebbe non servire più direttamente per il raycast del passthrough
+    private EnvironmentRaycastManager environmentRaycastManager;
 
-    // Aggiunge un pulsante nell'Inspector per avviare la procedura
-    [ContextMenu("Instanzia Quadri dal JSON")]
-    public void PlacePaintingsFromJSON()
+    void Start()
     {
-        if (string.IsNullOrEmpty(serverJson))
-        {
-            Debug.LogError("Il campo JSON è vuoto. Incolla il JSON ricevuto dal server.");
-            return;
-        }
-
-        if (paintingPrefab == null)
-        {
-            Debug.LogError("Prefab del quadro non assegnato. Assegna un prefab (es. un Quad) all'apposito campo.");
-            return;
-        }
-
-        // Deserializza il JSON nelle nostre classi C#
-        FrameData frameData;
-        try
-        {
-            frameData = JsonUtility.FromJson<FrameData>(serverJson);
-        }
-        catch (Exception e)
-        {
-            Debug.LogError($"Errore nel parsing del JSON: {e.Message}");
-            return;
-        }
-
-        // Ricrea la posizione e la rotazione della telecamera al momento della cattura
-        Vector3 historicalCamPosition = frameData.camera_pose.position.ToUnityVector3();
-        Quaternion historicalCamRotation = frameData.camera_pose.rotation.ToUnityQuaternion();
-
-        // Per la proiezione, usiamo la telecamera principale della scena,
-        // ma la spostiamo temporaneamente nella posa storica.
-        // Questo è più efficiente che creare una nuova telecamera.
-        Camera mainCamera = Camera.main;
+        mainCamera = Camera.main; // Manteniamo per ogni evenienza, ma PassthroughCameraUtils è preferito
         if (mainCamera == null)
         {
+            Debug.LogWarning(
+                "Nessuna telecamera principale trovata. PassthroughCameraUtils sarà utilizzato per il raycast.");
+        }
+
+        environmentRaycastManager = FindObjectOfType<EnvironmentRaycastManager>();
+        if (environmentRaycastManager == null)
+        {
             Debug.LogError(
-                "Nessuna telecamera principale trovata nella scena. Assicurati che la tua telecamera abbia il tag 'MainCamera'.");
+                "EnvironmentRaycastManager non trovato nella scena. Assicurati di averlo aggiunto a un GameObject (es. OVRCameraRig). Impossibile eseguire il raycast nell'ambiente reale.");
+        }
+    }
+
+    /// <summary>
+    /// Funzione pubblica che riceve il JSON e avvia il processo di posizionamento.
+    /// </summary>
+    /// <param name="jsonString">La stringa JSON con i dati di rilevamento.</param>
+    public void PlaceObjectFromJSON(string jsonString)
+    {
+        if (objectToPlace == null)
+        {
+            Debug.LogError("Il prefab 'objectToPlace' non è stato assegnato nell'Inspector.");
             return;
         }
 
-        // Salva la posa attuale della telecamera per ripristinarla dopo
-        Vector3 originalCamPos = mainCamera.transform.position;
-        Quaternion originalCamRot = mainCamera.transform.rotation;
-
-        // "Mettiti nella stessa posizione" del visore
-        mainCamera.transform.position = historicalCamPosition;
-        mainCamera.transform.rotation = historicalCamRotation;
-
-        Debug.Log($"Numero di quadri da istanziare: {frameData.detected_quadri.Length}");
-
-        // Itera su ogni quadro rilevato
-        foreach (var quadro in frameData.detected_quadri)
+        if (environmentRaycastManager == null)
         {
-            // --- Calcolo della Posizione nel Mondo 3D ---
-            // Le coordinate (nx, ny) sono "Viewport Coordinates".
-            // Il punto (0,0) è l'angolo in basso a sinistra dello schermo, (1,1) è in alto a destra.
-            // Usiamo Camera.ViewportToWorldPoint per proiettare questo punto 2D nello spazio 3D.
-            // Richiede una coordinata Z, che è la distanza dalla telecamera.
-            Vector3 centerPosition =
-                mainCamera.ViewportToWorldPoint(new Vector3(quadro.nx, quadro.ny, distanceFromCamera));
-
-            // --- Calcolo delle Dimensioni nel Mondo 3D ---
-            // Per trovare la larghezza e l'altezza in unità di mondo, proiettiamo altri due punti
-            // e calcoliamo la distanza.
-            Vector3 rightEdgePoint =
-                mainCamera.ViewportToWorldPoint(new Vector3(quadro.nx + quadro.nwidth / 2, quadro.ny,
-                    distanceFromCamera));
-            Vector3 topEdgePoint =
-                mainCamera.ViewportToWorldPoint(new Vector3(quadro.nx, quadro.ny + quadro.nheight / 2,
-                    distanceFromCamera));
-
-            float worldWidth = Vector3.Distance(centerPosition, rightEdgePoint) * 2;
-            float worldHeight = Vector3.Distance(centerPosition, topEdgePoint) * 2;
-
-            // --- Istanziazione e Configurazione dell'Oggetto ---
-            GameObject newPainting = Instantiate(paintingPrefab, centerPosition, Quaternion.identity);
-            newPainting.name = quadro.id;
-
-            // Scala il quad (che è 1x1 di default) per avere le dimensioni corrette
-            newPainting.transform.localScale = new Vector3(worldWidth, worldHeight, 1f);
-
-            // Orienta il quadro in modo che sia rivolto verso la posizione da cui è stato "visto"
-            newPainting.transform.LookAt(historicalCamPosition);
-
-            Debug.Log(
-                $"Creato quadro '{quadro.id}' a posizione {centerPosition} con scala ({worldWidth}, {worldHeight})");
+            Debug.LogError("EnvironmentRaycastManager non valido. Impossibile posizionare l'oggetto.");
+            return;
         }
 
-        // Ripristina la telecamera alla sua posizione e rotazione originali
-        mainCamera.transform.position = originalCamPos;
-        mainCamera.transform.rotation = originalCamRot;
-    }
+        // 1. Deserializza il JSON nella nostra struttura dati
+        DetectionInput data = JsonUtility.FromJson<DetectionInput>(jsonString);
 
-    public void PlacePaintingsFromJsonString(string json)
-    {
-        serverJson = json;
-        PlacePaintingsFromJSON();
+        if (data == null || data.detected_quadri == null || data.detected_quadri.Length == 0)
+        {
+            Debug.LogWarning("JSON non valido o nessun 'quadro' rilevato.");
+            return;
+        }
+
+        // Prendiamo il primo quadro rilevato per questo esempio
+        DetectedQuadroData quadro = data.detected_quadri[0];
+        Debug.Log($"Tentativo di posizionare l'oggetto per il quadro: {quadro.id} con confidenza: {quadro.confidence}");
+
+        // 2. Prepara il punto dello schermo per il raycast
+        // Le coordinate (nx, ny) sono normalizzate (0 a 1).
+        // PassthroughCameraUtils.ScreenPointToRayInWorld si aspetta pixel screen coordinates (width, height),
+        // quindi dobbiamo convertirle dalla scala normalizzata (0-1) alla scala pixel.
+        Vector2Int cameraScreenPoint = new Vector2Int(
+            (int)quadro.nx * Screen.width, // Normalizzata X * Larghezza dello schermo in pixel
+            (int)quadro.ny * Screen.height // Normalizzata Y * Altezza dello schermo in pixel
+        );
+
+        // 3. Crea un raggio dalla telecamera passthrough attraverso il punto dello schermo
+        // Usiamo PassthroughCameraEye.Left per esempio, puoi scegliere Right o Center se disponibile e preferibile.
+        var ray = PassthroughCameraUtils.ScreenPointToRayInWorld(PassthroughCameraEye.Left, cameraScreenPoint);
+
+        // Visualizza il raggio nell'editor di Unity per il debug
+        Debug.DrawRay(ray.origin, ray.direction * maxPlacementDistance, Color.cyan, 10.0f);
+
+        // 4. Esegui il Raycast usando EnvironmentRaycastManager
+        // Especifichiamo esplicitamente il tipo della hit per evitare ambiguità
+        if (environmentRaycastManager.Raycast(ray, out EnvironmentRaycastHit hitInfo,
+                maxPlacementDistance))
+        {
+            // La posizione è il punto di impatto del raggio.
+            Vector3 position = hitInfo.point;
+
+            // La rotazione fa in modo che l'oggetto sia "piatto" contro il muro.
+            // Quaternion.LookRotation guarda nella direzione della normale della superficie per farla "guardare via"
+            // Se vuoi che il quadro sia "appoggiato" sul muro, dovrebbe guardare nella direzione opposta alla normale.
+            // L'esempio fornito usa hitInfo.normal, che significa che l'oggetto "guarda fuori" dal muro.
+            // Se vuoi che il quadro sia rivolto verso l'utente quando è sul muro, dovresti usare -hitInfo.normal.
+            // Per un quadro, è più intuitivo che guardi verso chi lo posiziona.
+            Quaternion rotation = Quaternion.LookRotation(-hitInfo.normal, Vector3.up);
+
+            // Istanziamo il nostro prefab
+            GameObject instantiatedObject = Instantiate(objectToPlace, position, rotation);
+
+            Debug.Log($"Prefab '{objectToPlace.name}' istanziato a: {position} nell'ambiente reale.");
+
+            // OPZIONALE: Per rendere il quadro persistente nell'ambiente reale tra sessioni.
+            // Questo richiede l'aggiunta del componente OVRSpatialAnchor al prefab o runtime.
+            // OVRSpatialAnchor anchor = instantiatedObject.AddComponent<OVRSpatialAnchor>();
+            // anchor.StartSavingAnchor();
+            // Debug.Log($"Tentativo di salvare OVRSpatialAnchor per l'oggetto: {quadro.id}");
+        }
+        else
+        {
+            Debug.LogWarning(
+                "Il raggio non ha colpito nessuna superficie nell'ambiente reale entro la distanza massima. Impossibile posizionare l'oggetto.");
+        }
     }
 }

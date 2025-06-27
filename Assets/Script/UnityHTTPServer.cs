@@ -252,7 +252,7 @@ public class UnityHTTPServer : MonoBehaviour
                             // Chiamata diretta al piazzamento quadri
                             if (paintingPlacer != null)
                             {
-                                paintingPlacer.PlacePaintingsFromJsonString(capturedRequestBody);
+                                paintingPlacer.PlaceObjectFromJSON(capturedRequestBody);
                             }
                             else
                             {
