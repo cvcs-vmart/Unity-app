@@ -20052,6 +20052,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   objectToPlace: {fileID: 1375737368}
   maxPlacementDistance: 20
+  mainCamera: {fileID: 1653928889}
 --- !u!4 &1404020910
 Transform:
   m_ObjectHideFlags: 0
@@ -24188,6 +24189,7 @@ MonoBehaviour:
   manager: {fileID: 1964602099}
   debugText: {fileID: 1712031682}
   ovrCameraRig: {fileID: 1378101260}
+  paintingPlacer: {fileID: 1404020909}
 --- !u!1 &1712031681
 GameObject:
   m_ObjectHideFlags: 0

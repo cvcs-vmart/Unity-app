@@ -23,6 +23,8 @@ public class SendUdp : MonoBehaviour
     public TextMeshProUGUI debugText;
     public OVRCameraRig ovrCameraRig; // Assign this in the Inspector
 
+    public PaintingPlacer paintingPlacer; //test
+
     private IEnumerator Start()
     {
         udpClient = new UdpClient();
@@ -43,15 +45,57 @@ public class SendUdp : MonoBehaviour
 
     public void toggleSendStream()
     {
-     
-        Vector3 cameraPosition = ovrCameraRig.centerEyeAnchor.position;
-        Quaternion cameraRotation = ovrCameraRig.centerEyeAnchor.rotation;
+        Vector3 cameraPosition = ovrCameraRig.leftEyeAnchor.position;
+        Quaternion cameraRotation = ovrCameraRig.leftEyeAnchor.rotation;
 
-        
+
         Debug.Log($"Passthrough Camera Position: {cameraPosition}");
         Debug.Log($"Passthrough Camera Rotation: {cameraRotation.eulerAngles}");
 
         debugText.text = $"Visore Position: {cameraPosition}, Rotation: {cameraRotation.eulerAngles}";
+
+
+        /*   DetectedQuadroData q = new DetectedQuadroData
+           {
+               id = "quadro_1",
+               nx = 0.55f,
+               ny = 0.40f,
+               nwidth = 0.0005f,
+               nheight = 0.0005f,
+               confidence = 0.92f
+           };
+           DetectedQuadroData[] p = new DetectedQuadroData[1];
+
+
+           PositionData sc = new PositionData
+           {
+               x = cameraPosition.x,
+               y = cameraPosition.y,
+               z = cameraPosition.z
+           };
+
+           RotationData r = new RotationData
+           {
+               x = cameraRotation.eulerAngles.x,
+               y = cameraRotation.eulerAngles.y,
+               z = cameraRotation.eulerAngles.z
+           };
+
+           CameraPoseData cameraPose = new CameraPoseData
+           {
+               position = sc,
+               rotation = r
+           };
+
+
+           p[0] = q;
+           var s = new DetectionInput
+           {
+               detected_quadri = p,
+               camera_pose = cameraPose
+           };
+           // paintingPlacer.placePaint(s);*/
+
 
         if (!isSending)
             coruSend = StartCoroutine(CaptureFrames());
