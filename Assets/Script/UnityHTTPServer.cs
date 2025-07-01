@@ -4,7 +4,6 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
-using PassthroughCameraSamples.MultiObjectDetection;
 using TMPro;
 using UnityEngine;
 
@@ -43,7 +42,8 @@ public class UnityHTTPServer : MonoBehaviour
         // Verifica che il dispatcher sia inizializzato
         if (UnityMainThreadDispatcher.Instance() == null)
         {
-            Debug.LogError("UnityMainThreadDispatcher non è stato inizializzato correttamente. Le operazioni sul thread principale potrebbero fallire.");
+            Debug.LogError(
+                "UnityMainThreadDispatcher non è stato inizializzato correttamente. Le operazioni sul thread principale potrebbero fallire.");
         }
 
         // Prova ad avviare il server dopo un breve ritardo per permettere l'inizializzazione completa
@@ -60,6 +60,7 @@ public class UnityHTTPServer : MonoBehaviour
                 return ip.ToString();
             }
         }
+
         throw new Exception("No network adapters with an IPv4 address in the system!");
     }
 
@@ -85,31 +86,31 @@ public class UnityHTTPServer : MonoBehaviour
     {
         // Se il server è già stato avviato, non procedere
         if (serverStarted) return;
-        
+
         // Prima chiudi qualsiasi listener precedente, per sicurezza
         StopHttpServer();
 
         // Prova le porte: la porta principale, poi +1, +2, ecc.
         int basePort = int.Parse(serverPort);
         int maxAttempts = 10; // Prova fino a 10 porte diverse
-        
+
         for (int attempt = 0; attempt < maxAttempts; attempt++)
         {
             int portToTry = basePort + attempt;
-            
+
             // Verifica se la porta è disponibile
             if (!IsPortAvailable(portToTry))
             {
                 Debug.LogWarning($"Port {portToTry} is not available, trying next port...");
                 continue;
             }
-            
+
             currentPort = portToTry;
-            
+
             try
             {
                 listener = new HttpListener();
-                
+
                 string localIP = "127.0.0.1";
                 try
                 {
@@ -126,25 +127,26 @@ public class UnityHTTPServer : MonoBehaviour
                 Debug.Log($"Trying to start server on: {prefix}");
 
                 listener.Start();
-                
+
                 Debug.Log($"Unity HTTP Server started successfully on port {currentPort}");
                 if (debugText != null)
-                    debugText.text = $"Server running on Quest\nConnect to: http://{localIP}:{currentPort}/post_detections";
+                    debugText.text =
+                        $"Server running on Quest\nConnect to: http://{localIP}:{currentPort}/post_detections";
 
                 serverStarted = true;
                 isListening = true;
-                
+
                 listenerThread = new Thread(new ThreadStart(ListenForRequests));
                 listenerThread.IsBackground = true;
                 listenerThread.Start();
-                
+
                 // Se arriviamo qui, il server è stato avviato con successo
                 return;
             }
             catch (HttpListenerException ex)
             {
                 Debug.LogError($"Failed to start HTTP server on port {currentPort}: {ex.Message}");
-                
+
                 // Chiudi il listener corrente prima di riprovare
                 if (listener != null)
                 {
@@ -152,14 +154,17 @@ public class UnityHTTPServer : MonoBehaviour
                     {
                         listener.Close();
                     }
-                    catch { }
+                    catch
+                    {
+                    }
+
                     listener = null;
                 }
             }
             catch (Exception ex)
             {
                 Debug.LogError($"Unexpected error starting HTTP server: {ex.Message}");
-                
+
                 // Chiudi il listener corrente prima di riprovare
                 if (listener != null)
                 {
@@ -167,12 +172,15 @@ public class UnityHTTPServer : MonoBehaviour
                     {
                         listener.Close();
                     }
-                    catch { }
+                    catch
+                    {
+                    }
+
                     listener = null;
                 }
             }
         }
-        
+
         // Se arriviamo qui, non siamo riusciti a trovare una porta disponibile
         Debug.LogError($"Failed to start HTTP server after {maxAttempts} attempts.");
         if (debugText != null)
@@ -248,11 +256,15 @@ public class UnityHTTPServer : MonoBehaviour
                     {
                         try
                         {
-                            if(debugText != null) debugText.text += "\n" + capturedRequestBody;
+                            if (debugText != null) debugText.text += "\n" + capturedRequestBody;
                             // Chiamata diretta al piazzamento quadri
                             if (paintingPlacer != null)
                             {
-                                paintingPlacer.PlaceObjectFromJSON(capturedRequestBody);
+                                debugText.text = capturedRequestBody;
+
+                                Debug.LogError("debug text " + capturedRequestBody);
+
+                                // paintingPlacer.PlaceObjectFromJSON(capturedRequestBody);
                             }
                             else
                             {
@@ -267,16 +279,20 @@ public class UnityHTTPServer : MonoBehaviour
                 }
                 else
                 {
-                    Debug.LogError("UnityMainThreadDispatcher non disponibile. Impossibile elaborare i dati ricevuti sul thread principale di Unity.");
+                    Debug.LogError(
+                        "UnityMainThreadDispatcher non disponibile. Impossibile elaborare i dati ricevuti sul thread principale di Unity.");
                 }
 
                 // Invia una risposta di successo
-                RespondWithJson(response, "{\"status\": \"success\", \"message\": \"Detections received by Unity\"}", (int)HttpStatusCode.OK);
+                RespondWithJson(response, "{\"status\": \"success\", \"message\": \"Detections received by Unity\"}",
+                    (int)HttpStatusCode.OK);
             }
             else
             {
                 // Gestisci altre richieste o restituisci un errore 404
-                RespondWithJson(response, "{\"status\": \"error\", \"message\": \"Endpoint not found or method not allowed\"}", (int)HttpStatusCode.NotFound);
+                RespondWithJson(response,
+                    "{\"status\": \"error\", \"message\": \"Endpoint not found or method not allowed\"}",
+                    (int)HttpStatusCode.NotFound);
             }
         }
         catch (Exception ex)
@@ -284,7 +300,9 @@ public class UnityHTTPServer : MonoBehaviour
             Debug.LogError($"Error processing request: {ex.ToString()}");
             if (response.OutputStream.CanWrite)
             {
-                 RespondWithJson(response, "{\"status\": \"error\", \"message\": \"An internal server error occurred.\"}", (int)HttpStatusCode.InternalServerError);
+                RespondWithJson(response,
+                    "{\"status\": \"error\", \"message\": \"An internal server error occurred.\"}",
+                    (int)HttpStatusCode.InternalServerError);
             }
         }
         finally
@@ -292,7 +310,7 @@ public class UnityHTTPServer : MonoBehaviour
             response.Close();
         }
     }
-    
+
     private void RespondWithJson(HttpListenerResponse response, string jsonString, int statusCode)
     {
         response.StatusCode = statusCode;
@@ -303,7 +321,7 @@ public class UnityHTTPServer : MonoBehaviour
         {
             response.OutputStream.Write(buffer, 0, buffer.Length);
         }
-        catch(Exception ex)
+        catch (Exception ex)
         {
             Debug.LogError($"Could not write response: {ex.Message}");
         }
@@ -339,7 +357,7 @@ public class UnityHTTPServer : MonoBehaviour
 
         isListening = false;
         serverStarted = false;
-        
+
         if (listener != null)
         {
             try
@@ -365,8 +383,10 @@ public class UnityHTTPServer : MonoBehaviour
             {
                 listenerThread.Join(1000); // Aspetta che il thread finisca, con un timeout
             }
-            catch {}
-            
+            catch
+            {
+            }
+
             listenerThread = null;
         }
     }
