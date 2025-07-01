@@ -45,7 +45,7 @@ public class DetectionInput
 
 public class PaintingPlacer : MonoBehaviour
 {
-    [Tooltip("Il prefab da istanziare nella scena.")]
+    [Tooltip("Il prefab da istanziare nella scena. Assicurati che sia un piano 1x1 con pivot al centro.")]
     public GameObject objectToPlace;
 
     [Tooltip("La distanza massima a cui il raggio cercherà una superficie reale.")]
@@ -89,9 +89,7 @@ public class PaintingPlacer : MonoBehaviour
             return;
         }
 
-        // 1. Deserializza il JSON
         DetectionInput data = JsonUtility.FromJson<DetectionInput>(jsonString);
-
         placePaint(data);
     }
 
@@ -104,80 +102,104 @@ public class PaintingPlacer : MonoBehaviour
             return;
         }
 
-        DetectedQuadroData quadro = data.detected_quadri[0];
-        Debug.Log($"Tentativo di posizionare l'oggetto per il quadro: {quadro.id} con confidenza: {quadro.confidence}");
-
-        // 2. *** MODIFICA CHIAVE: Crea il raggio dalla posa storica ***
-        // Invece di usare la telecamera attuale, costruiamo un raggio che simula
-        // la posizione e l'orientamento della telecamera al momento del rilevamento.
-        Ray ray = CreateRayFromHistoricalPose(data.camera_pose, quadro);
-
-        // 3. Esegui il Raycast sull'ambiente fisico
-        // NOTA: Il raycasting sull'ambiente potrebbe richiedere un approccio diverso
-        // a seconda della versione dell'SDK. Physics.Raycast funziona solo sui collider di Unity.
-        // Per l'ambiente reale, devi usare le API di Meta.
-        // Qui usiamo Physics.Raycast assumendo che tu abbia dei collider di scena generati
-        // dalla Room Setup. Se non li hai, questa parte va adattata.
-        if (environmentRaycastManager.Raycast(ray, out EnvironmentRaycastHit hitInfo, maxPlacementDistance))
+        foreach (var quadro in data.detected_quadri)
         {
-            // La posizione è il punto di impatto del raggio.
-            Vector3 position = hitInfo.point;
+            Debug.Log(
+                $"Tentativo di posizionare l'oggetto per il quadro: {quadro.id} con confidenza: {quadro.confidence}");
 
-            // La rotazione fa in modo che l'oggetto sia "piatto" contro il muro,
-            // con la sua parte frontale (-transform.forward) che punta verso l'esterno.
-            Quaternion rotation = Quaternion.LookRotation(hitInfo.normal);
+            // 1. Crea il raggio dal centro del rilevamento
+            Ray centerRay = CreateRayFromHistoricalPose(data.camera_pose, quadro.nx, quadro.ny);
 
-            // Istanziamo il nostro prefab
-            GameObject instantiatedObject = Instantiate(objectToPlace, position, rotation);
+            // 2. Esegui il Raycast per trovare il punto centrale sulla superficie
+            if (environmentRaycastManager.Raycast(centerRay, out EnvironmentRaycastHit centerHit, maxPlacementDistance))
+            {
+                // --- POSIZIONAMENTO E ROTAZIONE ---
+                Vector3 position = centerHit.point;
+                Quaternion rotation = Quaternion.LookRotation(centerHit.normal);
+                GameObject instantiatedObject = Instantiate(objectToPlace, position, rotation);
 
-            // Opzionale: Se il tuo modello ha il lato "frontale" lungo l'asse Z positivo,
-            // potresti dover ruotare l'oggetto per farlo puntare verso l'utente.
-            // In tal caso, usa: Quaternion.LookRotation(-hitInfo.normal);
-            // instantiatedObject.transform.rotation = Quaternion.LookRotation(-hitInfo.normal);
+                Debug.Log($"Prefab '{objectToPlace.name}' istanziato a: {position} sulla superficie reale.");
 
-            Debug.Log($"Prefab '{objectToPlace.name}' istanziato a: {position} sulla superficie reale.");
-        }
-        else
-        {
-            Debug.LogWarning(
-                $"Il raggio simulato non ha colpito nessuna superficie reale entro {maxPlacementDistance} metri. L'oggetto non può essere posizionato. Origine: {ray.origin}, Direzione: {ray.direction}");
+                // --- INIZIO LOGICA DI SCALATURA ---
+
+                // 3. Calcola i punti per i bordi destro e superiore
+                // NOTA: Calcoliamo la mezza larghezza e mezza altezza per essere più robusti a distorsioni prospettiche.
+                float halfWidthNx = quadro.nx + (quadro.nwidth / 2.0f);
+                float halfHeightNy = quadro.ny + (quadro.nheight / 2.0f);
+
+                Ray rightRay = CreateRayFromHistoricalPose(data.camera_pose, halfWidthNx, quadro.ny);
+                Ray topRay = CreateRayFromHistoricalPose(data.camera_pose, quadro.nx, halfHeightNy);
+
+                Vector3 rightPoint;
+                Vector3 topPoint;
+
+                // Lancia il raggio per il bordo destro. Se fallisce, proietta il raggio sul piano del muro.
+                if (environmentRaycastManager.Raycast(rightRay, out EnvironmentRaycastHit rightHit,
+                        maxPlacementDistance))
+                {
+                    rightPoint = rightHit.point;
+                }
+                else
+                {
+                    // Fallback: proietta il raggio sul piano del muro trovato con il raggio centrale
+                    Plane wallPlane = new Plane(centerHit.normal, centerHit.point);
+                    wallPlane.Raycast(rightRay, out float enter);
+                    rightPoint = rightRay.GetPoint(enter);
+                    Debug.LogWarning("Raycast per il bordo destro fallito. Usato fallback di proiezione su piano.");
+                }
+
+                // Lancia il raggio per il bordo superiore. Se fallisce, usa lo stesso fallback.
+                if (environmentRaycastManager.Raycast(topRay, out EnvironmentRaycastHit topHit, maxPlacementDistance))
+                {
+                    topPoint = topHit.point;
+                }
+                else
+                {
+                    Plane wallPlane = new Plane(centerHit.normal, centerHit.point);
+                    wallPlane.Raycast(topRay, out float enter);
+                    topPoint = topRay.GetPoint(enter);
+                    Debug.LogWarning("Raycast per il bordo superiore fallito. Usato fallback di proiezione su piano.");
+                }
+
+                // 4. Calcola le dimensioni nel mondo reale e applica la scala
+                // Misuriamo la distanza dal centro al bordo e la raddoppiamo.
+                float worldWidth = Vector3.Distance(position, rightPoint) * 2.0f;
+                float worldHeight = Vector3.Distance(position, topPoint) * 2.0f;
+
+                // Applica la scala. Assumendo che l'oggetto sia 1x1, la scala è direttamente la dimensione calcolata.
+                // Manteniamo la scala Z originale del prefab per evitare di dargli uno spessore strano.
+                instantiatedObject.transform.localScale =
+                    new Vector3(worldWidth, worldHeight, instantiatedObject.transform.localScale.z);
+
+                Debug.Log($"Oggetto scalato a (Larghezza x Altezza): {worldWidth} x {worldHeight}");
+            }
+            else
+            {
+                Debug.LogWarning(
+                    $"Il raggio simulato non ha colpito nessuna superficie reale entro {maxPlacementDistance} metri. L'oggetto non può essere posizionato. Origine: {centerRay.origin}, Direzione: {centerRay.direction}");
+            }
         }
     }
 
     /// <summary>
-    /// Crea un raggio (Ray) partendo da una posa storica (posizione/rotazione) e
-    /// da coordinate normalizzate sullo schermo.
+    /// Crea un raggio (Ray) partendo da una posa storica e da coordinate normalizzate.
+    /// Ho refattorizzato questo metodo per accettare nx/ny direttamente e renderlo più riutilizzabile.
     /// </summary>
-    /// <param name="poseData">I dati di posizione e rotazione della telecamera al momento dello scatto.</param>
-    /// <param name="quadroData">I dati del quadro rilevato, incluse le coordinate normalizzate.</param>
-    /// <returns>Un oggetto Ray da usare per il raycasting.</returns>
-    private Ray CreateRayFromHistoricalPose(CameraPoseData poseData, DetectedQuadroData quadroData)
+    private Ray CreateRayFromHistoricalPose(CameraPoseData poseData, float nx, float ny)
     {
         // a. Ricostruisci la posizione e la rotazione storiche
         Vector3 historicalPosition = new Vector3(poseData.position.x, poseData.position.y, poseData.position.z);
         Quaternion historicalRotation = Quaternion.Euler(poseData.rotation.x, poseData.rotation.y, poseData.rotation.z);
 
-        // b. Converti le coordinate normalizzate (0-1) in coordinate di viewport (-1 a 1 per il centro) o di schermo (pixel)
-        // Usiamo la telecamera principale come riferimento per ottenere le sue proprietà (FOV, aspect ratio)
-        // che influenzano la proiezione del raggio.
+        // b. Converti le coordinate normalizzate (0-1) in coordinate di schermo (pixel)
+        float pixelX = nx * mainCamera.pixelWidth;
+        float pixelY = ny * mainCamera.pixelHeight;
 
-        // Calcoliamo le coordinate in pixel. Usiamo float per non perdere precisione.
-        float pixelX = quadroData.nx * mainCamera.pixelWidth;
-        float pixelY = quadroData.ny * mainCamera.pixelHeight;
-
-        // c. Usa la funzione ScreenPointToRay della telecamera di riferimento.
-        // Questa funzione crea un raggio che parte dalla posizione della telecamera e passa
-        // attraverso il punto specificato sul suo piano di proiezione.
+        // c. Usa ScreenPointToRay della telecamera di riferimento per ottenere una direzione
         Ray referenceRay = mainCamera.ScreenPointToRay(new Vector2(pixelX, pixelY));
 
-        // d. Ora abbiamo un raggio con l'origine e la direzione SBAGLIATE (quelle della telecamera live).
-        // Però, possiamo estrarre la direzione del raggio e "ri-orientarla" secondo la nostra rotazione storica.
-
-        // Trasformiamo la direzione del raggio (che è in coordinate globali) nello spazio locale della telecamera di riferimento.
+        // d. Trasforma la direzione del raggio per allinearla alla rotazione storica
         Vector3 localDirection = mainCamera.transform.InverseTransformDirection(referenceRay.direction);
-
-        // Ora trasformiamo questa direzione locale nello spazio globale usando la nostra rotazione storica.
-        // Questo ci dà la direzione corretta come se il raggio fosse stato emesso dalla telecamera con la posa storica.
         Vector3 finalDirection = historicalRotation * localDirection;
 
         // e. Crea e restituisci il raggio finale con l'origine e la direzione corrette.

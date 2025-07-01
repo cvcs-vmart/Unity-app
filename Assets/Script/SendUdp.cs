@@ -2,9 +2,18 @@ using System;
 using System.Collections;
 using System.Net.Sockets;
 using System.Threading.Tasks;
+using Meta.Net.NativeWebSocket;
 using PassthroughCameraSamples;
 using TMPro;
 using UnityEngine;
+
+[Serializable]
+public class FrameData
+{
+    public string frame; // Frame codificato in Base64
+    public CameraPoseData camera_pose;
+}
+
 
 public class SendUdp : MonoBehaviour
 {
@@ -25,11 +34,10 @@ public class SendUdp : MonoBehaviour
 
     public PaintingPlacer paintingPlacer; //test
 
+    private WebSocket websocket;
+
     private IEnumerator Start()
     {
-        udpClient = new UdpClient();
-        udpClient.Client.SendBufferSize = 65507;
-
         // Aspetta che la webcam sia pronta
         while (manager.WebCamTexture == null || !manager.WebCamTexture.isPlaying)
         {
@@ -43,7 +51,7 @@ public class SendUdp : MonoBehaviour
         pixelBuffer = new Color32[width * height];
     }
 
-    public void toggleSendStream()
+    async public void toggleSendStream()
     {
         Vector3 cameraPosition = ovrCameraRig.leftEyeAnchor.position;
         Quaternion cameraRotation = ovrCameraRig.leftEyeAnchor.rotation;
@@ -98,9 +106,35 @@ public class SendUdp : MonoBehaviour
 
 
         if (!isSending)
-            coruSend = StartCoroutine(CaptureFrames());
+        {
+            websocket = new WebSocket("ws://" + ip + ":" + port);
+
+            websocket.OnOpen += () =>
+            {
+                Debug.Log("Connessione WebSocket aperta!");
+                isSending = true;
+                coruSend = StartCoroutine(CaptureFrames());
+            };
+
+            websocket.OnError += (e) =>
+            {
+                Debug.LogError("Errore WebSocket " + "ws://" + ip + ":" + port + ": " + e);
+                isSending = false;
+            };
+
+            websocket.OnClose += (e) =>
+            {
+                Debug.Log("Connessione WebSocket chiusa!");
+                isSending = false;
+            };
+
+            await websocket.Connect();
+        }
         else
+        {
+            websocket.Close();
             StopCoroutine(coruSend);
+        }
 
         isSending = !isSending;
     }
@@ -124,37 +158,46 @@ public class SendUdp : MonoBehaviour
 
             if (webcam != null && webcam.didUpdateThisFrame)
             {
+                Vector3 camPosition = ovrCameraRig.centerEyeAnchor.position;
+                Quaternion camRotation = ovrCameraRig.centerEyeAnchor.rotation;
+
                 // Leggi i pixel e aggiorna la texture
                 pixelBuffer = webcam.GetPixels32();
                 reusableTexture.SetPixels32(pixelBuffer);
                 reusableTexture.Apply();
 
-                byte[] jpg = reusableTexture.EncodeToJPG(80); // qualità JPEG bassa = meno lag
+                byte[] jpgBytes = reusableTexture.EncodeToJPG(80); // qualità JPEG bassa = meno lag
+
+
+                FrameData dataToSend = new FrameData
+                {
+                    frame = Convert.ToBase64String(jpgBytes),
+                    camera_pose = new CameraPoseData
+                    {
+                        position = new PositionData { x = camPosition.x, y = camPosition.y, z = camPosition.z },
+                        rotation = new RotationData
+                        {
+                            x = camRotation.eulerAngles.x, y = camRotation.eulerAngles.y, z = camRotation.eulerAngles.z
+                        }
+                    }
+                };
+
 
                 // Invio in background per non bloccare il main thread
-                Task.Run(() => SendFrame(jpg));
+                Task.Run(() => SendFrame(dataToSend));
             }
         }
     }
 
-    private void SendFrame(byte[] frameData)
+    async private void SendFrame(FrameData frameData)
     {
         try
         {
-            int maxChunkSize = 65007;
-            int totalChunks = (int)Math.Ceiling((double)frameData.Length / maxChunkSize);
-
-            for (int i = 0; i < totalChunks; i++)
+            // Serializza in JSON e invia
+            string json = JsonUtility.ToJson(frameData);
+            if (websocket.State == WebSocketState.Open)
             {
-                int offset = i * maxChunkSize;
-                int chunkSize = Math.Min(maxChunkSize, frameData.Length - offset);
-                byte[] chunk = new byte[chunkSize + 5];
-
-                chunk[0] = (byte)totalChunks;
-                Buffer.BlockCopy(BitConverter.GetBytes(i), 0, chunk, 1, 4);
-                Buffer.BlockCopy(frameData, offset, chunk, 5, chunkSize);
-
-                udpClient.Send(chunk, chunk.Length, ip, port);
+                await websocket.SendText(json);
             }
         }
         catch (Exception e)
