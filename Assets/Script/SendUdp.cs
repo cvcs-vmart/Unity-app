@@ -30,7 +30,7 @@ public class SendUdp : MonoBehaviour
     private Color32[] pixelBuffer;
     private WaitForSeconds frameDelay = new WaitForSeconds(0.1f); // 10 FPS
     public TextMeshProUGUI debugText;
-    public OVRCameraRig ovrCameraRig; // Assign this in the Inspector
+    public Camera ovrCameraRig; // Assign this in the Inspector
 
     public PaintingPlacer paintingPlacer; //test
 
@@ -53,9 +53,8 @@ public class SendUdp : MonoBehaviour
 
     async public void toggleSendStream()
     {
-        Vector3 cameraPosition = ovrCameraRig.leftEyeAnchor.position;
-        Quaternion cameraRotation = ovrCameraRig.leftEyeAnchor.rotation;
-
+        Vector3 cameraPosition = ovrCameraRig.transform.position;
+        Quaternion cameraRotation = ovrCameraRig.transform.rotation;
 
         Debug.Log($"Passthrough Camera Position: {cameraPosition}");
         Debug.Log($"Passthrough Camera Rotation: {cameraRotation.eulerAngles}");
@@ -158,8 +157,8 @@ public class SendUdp : MonoBehaviour
 
             if (webcam != null && webcam.didUpdateThisFrame)
             {
-                Vector3 camPosition = ovrCameraRig.centerEyeAnchor.position;
-                Quaternion camRotation = ovrCameraRig.centerEyeAnchor.rotation;
+                Vector3 camPosition = ovrCameraRig.transform.position;
+                Quaternion camRotation = ovrCameraRig.transform.rotation;
 
                 // Leggi i pixel e aggiorna la texture
                 pixelBuffer = webcam.GetPixels32();

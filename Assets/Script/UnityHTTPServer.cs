@@ -260,7 +260,7 @@ public class UnityHTTPServer : MonoBehaviour
                             // Chiamata diretta al piazzamento quadri
                             if (paintingPlacer != null)
                             {
-                                debugText.text = capturedRequestBody;
+                                //debugText.text = capturedRequestBody;
 
                                 Debug.LogError("debug text " + capturedRequestBody);
 

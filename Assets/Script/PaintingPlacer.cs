@@ -1,5 +1,6 @@
 using System;
 using Meta.XR;
+using TMPro;
 using UnityEngine;
 
 [Serializable]
@@ -28,12 +29,10 @@ public class CameraPoseData
 [Serializable]
 public class DetectedQuadroData
 {
-    public string id;
-    public float nx;
-    public float ny;
-    public float nwidth;
-    public float nheight;
-    public float confidence;
+    public float centerX;
+    public float centerY;
+    public float nWidth;
+    public float nHeight;
 }
 
 [Serializable]
@@ -55,7 +54,7 @@ public class PaintingPlacer : MonoBehaviour
     public Camera mainCamera;
 
     private EnvironmentRaycastManager environmentRaycastManager;
-
+    public TextMeshProUGUI debugText;
 
     void Start()
     {
@@ -77,10 +76,6 @@ public class PaintingPlacer : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Funzione pubblica che riceve il JSON e avvia il processo di posizionamento.
-    /// </summary>
-    /// <param name="jsonString">La stringa JSON con i dati di rilevamento.</param>
     public void PlaceObjectFromJSON(string jsonString)
     {
         if (objectToPlace == null)
@@ -102,13 +97,29 @@ public class PaintingPlacer : MonoBehaviour
             return;
         }
 
+        debugText.text += "\n " + mainCamera.pixelWidth + "x" + mainCamera.pixelHeight + "\n\n";
+
+        // Dimensioni dello schermo su cui è stata fatta la rilevazione
+        const float originalScreenWidth = 1280.0f;
+        const float originalScreenHeight = 960.0f;
+
+        // Calcola i fattori di scala
+        float scaleX = mainCamera.pixelWidth / originalScreenWidth;
+        float scaleY = mainCamera.pixelHeight / originalScreenHeight;
+
         foreach (var quadro in data.detected_quadri)
         {
-            Debug.Log(
-                $"Tentativo di posizionare l'oggetto per il quadro: {quadro.id} con confidenza: {quadro.confidence}");
+            // Applica la proporzione alle coordinate e dimensioni del quadro
+            float scaledCenterX = quadro.centerX * scaleX;
+            float scaledCenterY = quadro.centerY * scaleY;
+            float scaledNWidth = quadro.nWidth * scaleX * 0.9f;
+            float scaledNHeight = quadro.nHeight * scaleY * 0.9f;
 
-            // 1. Crea il raggio dal centro del rilevamento
-            Ray centerRay = CreateRayFromHistoricalPose(data.camera_pose, quadro.nx, quadro.ny);
+            Debug.Log(
+                $"Tentativo di posizionare l'oggetto per il quadro:");
+
+            // 1. Crea il raggio dal centro del rilevamento (usando le coordinate scalate)
+            Ray centerRay = CreateRayFromHistoricalPose(data.camera_pose, scaledCenterX, scaledCenterY);
 
             // 2. Esegui il Raycast per trovare il punto centrale sulla superficie
             if (environmentRaycastManager.Raycast(centerRay, out EnvironmentRaycastHit centerHit, maxPlacementDistance))
@@ -122,13 +133,13 @@ public class PaintingPlacer : MonoBehaviour
 
                 // --- INIZIO LOGICA DI SCALATURA ---
 
-                // 3. Calcola i punti per i bordi destro e superiore
+                // 3. Calcola i punti per i bordi destro e superiore usando le dimensioni scalate
                 // NOTA: Calcoliamo la mezza larghezza e mezza altezza per essere più robusti a distorsioni prospettiche.
-                float halfWidthNx = quadro.nx + (quadro.nwidth / 2.0f);
-                float halfHeightNy = quadro.ny + (quadro.nheight / 2.0f);
+                float halfWidthNx = scaledCenterX + (scaledNWidth / 2.0f);
+                float halfHeightNy = scaledCenterY + (scaledNHeight / 2.0f);
 
-                Ray rightRay = CreateRayFromHistoricalPose(data.camera_pose, halfWidthNx, quadro.ny);
-                Ray topRay = CreateRayFromHistoricalPose(data.camera_pose, quadro.nx, halfHeightNy);
+                Ray rightRay = CreateRayFromHistoricalPose(data.camera_pose, halfWidthNx, scaledCenterY);
+                Ray topRay = CreateRayFromHistoricalPose(data.camera_pose, scaledCenterX, halfHeightNy);
 
                 Vector3 rightPoint;
                 Vector3 topPoint;
@@ -181,19 +192,14 @@ public class PaintingPlacer : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Crea un raggio (Ray) partendo da una posa storica e da coordinate normalizzate.
-    /// Ho refattorizzato questo metodo per accettare nx/ny direttamente e renderlo più riutilizzabile.
-    /// </summary>
-    private Ray CreateRayFromHistoricalPose(CameraPoseData poseData, float nx, float ny)
+
+    private Ray CreateRayFromHistoricalPose(CameraPoseData poseData, float pixelX, float pixelY)
     {
         // a. Ricostruisci la posizione e la rotazione storiche
         Vector3 historicalPosition = new Vector3(poseData.position.x, poseData.position.y, poseData.position.z);
         Quaternion historicalRotation = Quaternion.Euler(poseData.rotation.x, poseData.rotation.y, poseData.rotation.z);
 
-        // b. Converti le coordinate normalizzate (0-1) in coordinate di schermo (pixel)
-        float pixelX = nx;
-        float pixelY = ny;
+        pixelY = mainCamera.pixelHeight - pixelY;
 
         // c. Usa ScreenPointToRay della telecamera di riferimento per ottenere una direzione
         Ray referenceRay = mainCamera.ScreenPointToRay(new Vector2(pixelX, pixelY));
