@@ -264,7 +264,7 @@ public class UnityHTTPServer : MonoBehaviour
 
                                 Debug.LogError("debug text " + capturedRequestBody);
 
-                                // paintingPlacer.PlaceObjectFromJSON(capturedRequestBody);
+                                paintingPlacer.PlaceObjectFromJSON(capturedRequestBody);
                             }
                             else
                             {

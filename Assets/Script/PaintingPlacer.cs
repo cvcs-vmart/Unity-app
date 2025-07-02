@@ -192,8 +192,8 @@ public class PaintingPlacer : MonoBehaviour
         Quaternion historicalRotation = Quaternion.Euler(poseData.rotation.x, poseData.rotation.y, poseData.rotation.z);
 
         // b. Converti le coordinate normalizzate (0-1) in coordinate di schermo (pixel)
-        float pixelX = nx * mainCamera.pixelWidth;
-        float pixelY = ny * mainCamera.pixelHeight;
+        float pixelX = nx;
+        float pixelY = ny;
 
         // c. Usa ScreenPointToRay della telecamera di riferimento per ottenere una direzione
         Ray referenceRay = mainCamera.ScreenPointToRay(new Vector2(pixelX, pixelY));

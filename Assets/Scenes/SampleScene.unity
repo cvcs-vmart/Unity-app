@@ -20161,6 +20161,7 @@ MonoBehaviour:
   objectToPlace: {fileID: 2042180527}
   maxPlacementDistance: 20
   mainCamera: {fileID: 1653928889}
+  debugText: {fileID: 1712031682}
 --- !u!4 &1404020910
 Transform:
   m_ObjectHideFlags: 0
