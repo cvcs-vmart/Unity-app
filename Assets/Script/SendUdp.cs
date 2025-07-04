@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading.Tasks;
 using Meta.Net.NativeWebSocket;
 using PassthroughCameraSamples;
@@ -157,8 +158,9 @@ public class SendUdp : MonoBehaviour
 
             if (webcam != null && webcam.didUpdateThisFrame)
             {
-                Vector3 camPosition = ovrCameraRig.transform.position;
-                Quaternion camRotation = ovrCameraRig.transform.rotation;
+                var r = PassthroughCameraUtils.GetCameraPoseInWorld(PassthroughCameraEye.Left);
+                Vector3 camPosition = r.position;
+                Quaternion camRotation = r.rotation;
 
                 // Leggi i pixel e aggiorna la texture
                 pixelBuffer = webcam.GetPixels32();
@@ -166,11 +168,9 @@ public class SendUdp : MonoBehaviour
                 reusableTexture.Apply();
 
                 byte[] jpgBytes = reusableTexture.EncodeToJPG(80); // qualità JPEG bassa = meno lag
-
-
+                
                 FrameData dataToSend = new FrameData
                 {
-                    frame = Convert.ToBase64String(jpgBytes),
                     camera_pose = new CameraPoseData
                     {
                         position = new PositionData { x = camPosition.x, y = camPosition.y, z = camPosition.z },
@@ -181,22 +181,28 @@ public class SendUdp : MonoBehaviour
                     }
                 };
 
+                string json = JsonUtility.ToJson(dataToSend);
+                byte[] jsonBytes = Encoding.UTF8.GetBytes(json);
+                byte[] jsonLengthBytes = BitConverter.GetBytes(jsonBytes.Length);
+
+                byte[] messageBytes = new byte[jsonLengthBytes.Length + jsonBytes.Length + jpgBytes.Length];
+                jsonLengthBytes.CopyTo(messageBytes, 0);
+                jsonBytes.CopyTo(messageBytes, jsonLengthBytes.Length);
+                jpgBytes.CopyTo(messageBytes, jsonLengthBytes.Length + jsonBytes.Length);
 
                 // Invio in background per non bloccare il main thread
-                Task.Run(() => SendFrame(dataToSend));
+                Task.Run(() => SendFrameB(messageBytes));
             }
         }
     }
 
-    async private void SendFrame(FrameData frameData)
+    async private void SendFrameB(byte[] frameData)
     {
         try
         {
-            // Serializza in JSON e invia
-            string json = JsonUtility.ToJson(frameData);
             if (websocket.State == WebSocketState.Open)
             {
-                await websocket.SendText(json);
+                await websocket.Send(frameData);
             }
         }
         catch (Exception e)
