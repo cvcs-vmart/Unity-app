@@ -167,42 +167,44 @@ public class SendUdp : MonoBehaviour
                 reusableTexture.SetPixels32(pixelBuffer);
                 reusableTexture.Apply();
 
-                byte[] jpgBytes = reusableTexture.EncodeToJPG(80); // qualità JPEG bassa = meno lag
-                
-                FrameData dataToSend = new FrameData
-                {
-                    camera_pose = new CameraPoseData
-                    {
-                        position = new PositionData { x = camPosition.x, y = camPosition.y, z = camPosition.z },
-                        rotation = new RotationData
-                        {
-                            x = camRotation.eulerAngles.x, y = camRotation.eulerAngles.y, z = camRotation.eulerAngles.z
-                        }
-                    }
-                };
+                byte[] jpgBytes = reusableTexture.EncodeToJPG(80);
 
-                string json = JsonUtility.ToJson(dataToSend);
-                byte[] jsonBytes = Encoding.UTF8.GetBytes(json);
-                byte[] jsonLengthBytes = BitConverter.GetBytes(jsonBytes.Length);
-
-                byte[] messageBytes = new byte[jsonLengthBytes.Length + jsonBytes.Length + jpgBytes.Length];
-                jsonLengthBytes.CopyTo(messageBytes, 0);
-                jsonBytes.CopyTo(messageBytes, jsonLengthBytes.Length);
-                jpgBytes.CopyTo(messageBytes, jsonLengthBytes.Length + jsonBytes.Length);
 
                 // Invio in background per non bloccare il main thread
-                Task.Run(() => SendFrameB(messageBytes));
+                Task.Run(() => SendFrameB(camPosition, camRotation, jpgBytes));
             }
         }
     }
 
-    async private void SendFrameB(byte[] frameData)
+    async private void SendFrameB(Vector3 camPosition, Quaternion camRotation, byte[] jpgBytes)
     {
+        FrameData dataToSend = new FrameData
+        {
+            camera_pose = new CameraPoseData
+            {
+                position = new PositionData { x = camPosition.x, y = camPosition.y, z = camPosition.z },
+                rotation = new RotationData
+                {
+                    x = camRotation.eulerAngles.x, y = camRotation.eulerAngles.y, z = camRotation.eulerAngles.z
+                }
+            }
+        };
+
+        string json = JsonUtility.ToJson(dataToSend);
+        byte[] jsonBytes = Encoding.UTF8.GetBytes(json);
+        byte[] jsonLengthBytes = BitConverter.GetBytes(jsonBytes.Length);
+
+        byte[] messageBytes = new byte[jsonLengthBytes.Length + jsonBytes.Length + jpgBytes.Length];
+        jsonLengthBytes.CopyTo(messageBytes, 0);
+        jsonBytes.CopyTo(messageBytes, jsonLengthBytes.Length);
+        jpgBytes.CopyTo(messageBytes, jsonLengthBytes.Length + jsonBytes.Length);
+
+
         try
         {
             if (websocket.State == WebSocketState.Open)
             {
-                await websocket.Send(frameData);
+                await websocket.Send(messageBytes);
             }
         }
         catch (Exception e)
