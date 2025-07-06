@@ -69,7 +69,7 @@ public class PaintingPlacer : MonoBehaviour
             }
         }
 
-        environmentRaycastManager = FindObjectOfType<EnvironmentRaycastManager>();
+        environmentRaycastManager = FindFirstObjectByType<EnvironmentRaycastManager>();
         if (environmentRaycastManager == null)
         {
             Debug.LogError(
@@ -87,6 +87,7 @@ public class PaintingPlacer : MonoBehaviour
 
         DetectionInput data = JsonUtility.FromJson<DetectionInput>(jsonString);
         placePaint_PC(data);
+        //placePaint(data);
     }
 
 
@@ -172,7 +173,7 @@ public class PaintingPlacer : MonoBehaviour
         }
     }
 
-    // Method taken from PassthroughCameraUtils.cs while moving head
+    // Method taken from PassthroughCameraUtils.cs, modified to place the object in the right position while moving
     public static Ray ScreenPointToRayInWorldOnHistoricalPos(PassthroughCameraEye cameraEye, Vector2Int screenPoint,
         CameraPoseData cameraPose)
     {
@@ -203,11 +204,11 @@ public class PaintingPlacer : MonoBehaviour
         float scaleX = mainCamera.pixelWidth / originalScreenWidth;
         float scaleY = mainCamera.pixelHeight / originalScreenHeight;
 
-        placeObjectInPose(data.camera_pose, 0, 0);
+        /*placeObjectInPose(data.camera_pose, 0, 0);
         placeObjectInPose(data.camera_pose, 100, 100);
         placeObjectInPose(data.camera_pose, 0, mainCamera.pixelHeight);
         placeObjectInPose(data.camera_pose, mainCamera.pixelWidth, 0);
-        placeObjectInPose(data.camera_pose, mainCamera.pixelWidth, mainCamera.pixelHeight);
+        placeObjectInPose(data.camera_pose, mainCamera.pixelWidth, mainCamera.pixelHeight);*/
 
         foreach (var quadro in data.detected_quadri)
         {
@@ -222,10 +223,10 @@ public class PaintingPlacer : MonoBehaviour
 
             // 1. Crea il raggio dal centro del rilevamento (usando le coordinate scalate)
             Ray centerRay = CreateRayFromHistoricalPose(data.camera_pose, scaledCenterX, scaledCenterY);
-            placeObjectInPose(data.camera_pose, scaledCenterX - scaledNWidth / 2, scaledCenterY - scaledNHeight / 2);
+            /*placeObjectInPose(data.camera_pose, scaledCenterX - scaledNWidth / 2, scaledCenterY - scaledNHeight / 2);
             placeObjectInPose(data.camera_pose, scaledCenterX + scaledNWidth / 2, scaledCenterY - scaledNHeight / 2);
             placeObjectInPose(data.camera_pose, scaledCenterX - scaledNWidth / 2, scaledCenterY + scaledNHeight / 2);
-            placeObjectInPose(data.camera_pose, scaledCenterX + scaledNWidth / 2, scaledCenterY + scaledNHeight / 2);
+            placeObjectInPose(data.camera_pose, scaledCenterX + scaledNWidth / 2, scaledCenterY + scaledNHeight / 2);*/
 
 
             // 2. Esegui il Raycast per trovare il punto centrale sulla superficie
@@ -237,7 +238,7 @@ public class PaintingPlacer : MonoBehaviour
                 GameObject instantiatedObject = Instantiate(objectToPlace, position, rotation);
 
 
-                GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                /*GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
 
                 marker.transform.position = position;
                 marker.transform.localScale = Vector3.one * 0.05f;
@@ -300,11 +301,12 @@ public class PaintingPlacer : MonoBehaviour
 
                 // instantiatedObject.transform.localScale =
                 //  new Vector3(worldWidth, worldHeight, instantiatedObject.transform.localScale.z);
-
-                Debug.Log($"Oggetto scalato a (Larghezza x Altezza): {worldWidth} x {worldHeight}");
+*/
+                debugText.text += "\nOggetto posizionato";
             }
             else
             {
+                debugText.text += "\nnulla";
                 Debug.LogWarning(
                     $"Il raggio simulato non ha colpito nessuna superficie reale entro {maxPlacementDistance} metri. L'oggetto non può essere posizionato. Origine: {centerRay.origin}, Direzione: {centerRay.direction}");
             }
@@ -330,7 +332,7 @@ public class PaintingPlacer : MonoBehaviour
         Vector3 historicalPosition = new Vector3(poseData.position.x, poseData.position.y, poseData.position.z);
         Quaternion historicalRotation = Quaternion.Euler(poseData.rotation.x, poseData.rotation.y, poseData.rotation.z);
 
-        //pixelY = mainCamera.pixelHeight - pixelY;
+        pixelY = mainCamera.pixelHeight - pixelY;
         //pixelX = mainCamera.pixelWidth - pixelX;
 
         // c. Usa ScreenPointToRay della telecamera di riferimento per ottenere una direzione
