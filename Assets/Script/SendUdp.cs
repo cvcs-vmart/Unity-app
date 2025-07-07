@@ -33,14 +33,12 @@ public class SendUdp : MonoBehaviour
     private Color32[] pixelBuffer;
     private WaitForSeconds frameDelay = new WaitForSeconds(0.1f); // 10 FPS
     public TextMeshProUGUI debugText;
-    public Camera ovrCameraRig; // Assign this in the Inspector
+    public TextMeshProUGUI socketStatus;
 
-    public PaintingPlacer paintingPlacer; //test
+    //public PaintingPlacer paintingPlacer;
 
     private WebSocket websocket;
 
-    const float originalScreenWidth = 1280.0f;
-    const float originalScreenHeight = 960.0f;
 
     private EnvironmentRaycastManager environmentRaycastManager;
 
@@ -68,58 +66,58 @@ public class SendUdp : MonoBehaviour
 
     async public void toggleSendStream()
     {
-        Vector3 cameraPosition = ovrCameraRig.transform.position;
-        Quaternion cameraRotation = ovrCameraRig.transform.rotation;
+        /* Vector3 cameraPosition = ovrCameraRig.transform.position;
+         Quaternion cameraRotation = ovrCameraRig.transform.rotation;
 
-        Debug.Log($"Passthrough Camera Position: {cameraPosition}");
-        Debug.Log($"Passthrough Camera Rotation: {cameraRotation.eulerAngles}");
+         Debug.Log($"Passthrough Camera Position: {cameraPosition}");
+         Debug.Log($"Passthrough Camera Rotation: {cameraRotation.eulerAngles}");
 
-        debugText.text = $"Visore Position: {cameraPosition}, Rotation: {cameraRotation.eulerAngles}";
-
-
-        /*   DetectedQuadroData q = new DetectedQuadroData
-           {
-               id = "quadro_1",
-               nx = 0.55f,
-               ny = 0.40f,
-               nwidth = 0.0005f,
-               nheight = 0.0005f,
-               confidence = 0.92f
-           };
-           DetectedQuadroData[] p = new DetectedQuadroData[1];
+         debugText.text = $"Visore Position: {cameraPosition}, Rotation: {cameraRotation.eulerAngles}";
 
 
-           PositionData sc = new PositionData
-           {
-               x = cameraPosition.x,
-               y = cameraPosition.y,
-               z = cameraPosition.z
-           };
-
-           RotationData r = new RotationData
-           {
-               x = cameraRotation.eulerAngles.x,
-               y = cameraRotation.eulerAngles.y,
-               z = cameraRotation.eulerAngles.z
-           };
-
-           CameraPoseData cameraPose = new CameraPoseData
-           {
-               position = sc,
-               rotation = r
-           };
+            DetectedQuadroData q = new DetectedQuadroData
+            {
+                id = "quadro_1",
+                nx = 0.55f,
+                ny = 0.40f,
+                nwidth = 0.0005f,
+                nheight = 0.0005f,
+                confidence = 0.92f
+            };
+            DetectedQuadroData[] p = new DetectedQuadroData[1];
 
 
-           p[0] = q;
-           var s = new DetectionInput
-           {
-               detected_quadri = p,
-               camera_pose = cameraPose
-           };
-           // paintingPlacer.placePaint(s);*/
+            PositionData sc = new PositionData
+            {
+                x = cameraPosition.x,
+                y = cameraPosition.y,
+                z = cameraPosition.z
+            };
+
+            RotationData r = new RotationData
+            {
+                x = cameraRotation.eulerAngles.x,
+                y = cameraRotation.eulerAngles.y,
+                z = cameraRotation.eulerAngles.z
+            };
+
+            CameraPoseData cameraPose = new CameraPoseData
+            {
+                position = sc,
+                rotation = r
+            };
 
 
-        if (!isSending)
+            p[0] = q;
+            var s = new DetectionInput
+            {
+                detected_quadri = p,
+                camera_pose = cameraPose
+            };
+            // paintingPlacer.placePaint(s);*/
+
+        isSending = !isSending;
+        if (isSending)
         {
             websocket = new WebSocket("ws://" + ip + ":" + port);
 
@@ -127,6 +125,7 @@ public class SendUdp : MonoBehaviour
             {
                 Debug.Log("Connessione WebSocket aperta!");
                 isSending = true;
+                socketStatus.text = "open";
                 coruSend = StartCoroutine(CaptureFrames());
             };
 
@@ -147,10 +146,9 @@ public class SendUdp : MonoBehaviour
         else
         {
             websocket.Close();
+            socketStatus.text = "closed";
             StopCoroutine(coruSend);
         }
-
-        isSending = !isSending;
     }
 
     public void setIP(string ip) => this.ip = ip;

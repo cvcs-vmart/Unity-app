@@ -20,6 +20,8 @@ public class UnityHTTPServer : MonoBehaviour
     private Thread listenerThread;
     private bool isListening = true;
     public TextMeshProUGUI debugText;
+    public TextMeshProUGUI port;
+    public TextMeshProUGUI ip;
     private int currentPort;
     private bool serverStarted = false;
 
@@ -130,9 +132,12 @@ public class UnityHTTPServer : MonoBehaviour
 
                 Debug.Log($"Unity HTTP Server started successfully on port {currentPort}");
                 if (debugText != null)
-                    debugText.text =
-                        $"Server running on Quest\nConnect to: http://{localIP}:{currentPort}/post_detections";
-                
+                {
+                    port.text = currentPort + "";
+                    ip.text = localIP;
+                }
+
+
                 serverStarted = true;
                 isListening = true;
 

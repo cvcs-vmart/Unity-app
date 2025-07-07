@@ -1,5 +1,6 @@
 using System;
 using Meta.XR;
+using Meta.XR.MRUtilityKit;
 using PassthroughCameraSamples;
 using TMPro;
 using UnityEngine;
@@ -60,8 +61,7 @@ public class PaintingPlacer : MonoBehaviour
 
     public LayerMask sceneMeshLayer; // the mesh of the scene where the object will be placed
 
-    const float originalScreenWidth = 1280.0f;
-    const float originalScreenHeight = 960.0f;
+    private MeshFilter map;
 
     void Start()
     {
@@ -102,11 +102,28 @@ public class PaintingPlacer : MonoBehaviour
     public void onRoomMeshLoad(MeshFilter map)
     {
         //Impostare il layer all'ogetto in modo che il raycast possa colpirlo
+        this.map = map;
         map.gameObject.layer = LayerMask.NameToLayer("SceneMeshes");
 
         // Disabilita il renderer del RoomMesh per evitare che sia visibile nella scena
         var renderer = map.GetComponent<Renderer>();
         if (renderer != null) renderer.enabled = false;
+    }
+
+    public void toggleMapVisibility()
+    {
+        if (map == null) return;
+
+        var renderer = map.GetComponent<Renderer>();
+        if (renderer != null)
+        {
+            renderer.enabled = !renderer.enabled;
+        }
+    }
+
+    public void remap()
+    {
+        OVRScene.RequestSpaceSetup();
     }
 
 
