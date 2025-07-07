@@ -3,6 +3,7 @@ using Meta.XR;
 using PassthroughCameraSamples;
 using TMPro;
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 
 [Serializable]
 public class PositionData
@@ -57,6 +58,11 @@ public class PaintingPlacer : MonoBehaviour
     private EnvironmentRaycastManager environmentRaycastManager;
     public TextMeshProUGUI debugText;
 
+    public LayerMask sceneMeshLayer; // the mesh of the scene where the object will be placed
+
+    const float originalScreenWidth = 1280.0f;
+    const float originalScreenHeight = 960.0f;
+
     void Start()
     {
         if (mainCamera == null)
@@ -86,11 +92,108 @@ public class PaintingPlacer : MonoBehaviour
         }
 
         DetectionInput data = JsonUtility.FromJson<DetectionInput>(jsonString);
-        placePaint_PC(data);
+
+        //placePaint_PC(data);
         //placePaint(data);
+        placePaint_Room(data);
+    }
+
+    //metodo chiamato quando il RoomMesh viene caricato. 
+    public void onRoomMeshLoad(MeshFilter map)
+    {
+        //Impostare il layer all'ogetto in modo che il raycast possa colpirlo
+        map.gameObject.layer = LayerMask.NameToLayer("SceneMeshes");
+
+        // Disabilita il renderer del RoomMesh per evitare che sia visibile nella scena
+        var renderer = map.GetComponent<Renderer>();
+        if (renderer != null) renderer.enabled = false;
     }
 
 
+    // terzo metodo, fai il raycast sulle pareti della stanza
+    public void placePaint_Room(DetectionInput data)
+    {
+        if (data == null || data.detected_quadri == null || data.detected_quadri.Length == 0)
+        {
+            Debug.LogWarning("JSON non valido o nessun 'quadro' rilevato.");
+            return;
+        }
+
+        foreach (var quadro in data.detected_quadri)
+        {
+            var r = ScreenPointToRayInWorldOnHistoricalPos(PassthroughCameraEye.Left,
+                new Vector2Int((int)quadro.centerX, 960 - (int)quadro.centerY), // la coordinate Y sono invertite
+                data.camera_pose);
+
+            if (Physics.Raycast(r, out var centerHit, maxPlacementDistance, sceneMeshLayer))
+            {
+                Vector3 position = centerHit.point;
+                Quaternion rotation = Quaternion.LookRotation(centerHit.normal);
+                GameObject instantiatedObject = Instantiate(objectToPlace, position, rotation);
+                debugText.text += "\n posizionato: " + position + " con rotazione: " + rotation.eulerAngles;
+
+
+                Ray rightRay = ScreenPointToRayInWorldOnHistoricalPos(PassthroughCameraEye.Left,
+                    new Vector2Int((int)(quadro.centerX + quadro.nWidth / 2),
+                        960 - (int)quadro.centerY), // la coordinate Y sono invertite
+                    data.camera_pose);
+                Ray topRay = ScreenPointToRayInWorldOnHistoricalPos(PassthroughCameraEye.Left,
+                    new Vector2Int((int)quadro.centerX,
+                        960 - (int)(quadro.centerY + quadro.nHeight / 2)), // la coordinate Y sono invertite
+                    data.camera_pose);
+
+                Vector3 rightPoint;
+                Vector3 topPoint;
+
+                // Lancia il raggio per il bordo destro. Se fallisce, proietta il raggio sul piano del muro.
+                if (Physics.Raycast(rightRay, out var rightHit, maxPlacementDistance, sceneMeshLayer))
+                {
+                    rightPoint = rightHit.point;
+                }
+                else
+                {
+                    // Fallback: proietta il raggio sul piano del muro trovato con il raggio centrale
+                    Plane wallPlane = new Plane(centerHit.normal, centerHit.point);
+                    wallPlane.Raycast(rightRay, out float enter);
+                    rightPoint = rightRay.GetPoint(enter);
+                    Debug.LogWarning("Raycast per il bordo destro fallito. Usato fallback di proiezione su piano.");
+                }
+
+                // Lancia il raggio per il bordo superiore. Se fallisce, usa lo stesso fallback.
+                if (Physics.Raycast(topRay, out var topHit, maxPlacementDistance, sceneMeshLayer))
+                {
+                    topPoint = topHit.point;
+                }
+                else
+                {
+                    Plane wallPlane = new Plane(centerHit.normal, centerHit.point);
+                    wallPlane.Raycast(topRay, out float enter);
+                    topPoint = topRay.GetPoint(enter);
+                    Debug.LogWarning("Raycast per il bordo superiore fallito. Usato fallback di proiezione su piano.");
+                }
+
+                // 4. Calcola le dimensioni nel mondo reale e applica la scala
+                // Misuriamo la distanza dal centro al bordo e la raddoppiamo.
+                float worldWidth = Vector3.Distance(position, rightPoint) * 2.0f;
+                float worldHeight = Vector3.Distance(position, topPoint) * 2.0f;
+
+                // Applica la scala. Assumendo che l'oggetto sia 1x1, la scala è direttamente la dimensione calcolata.
+                // Manteniamo la scala Z originale del prefab per evitare di dargli uno spessore strano.
+                instantiatedObject.transform.localScale =
+                    new Vector3(worldWidth, worldHeight, instantiatedObject.transform.localScale.z);
+
+                debugText.text += "\n posizionato: " + position + " con rotazione: " + rotation.eulerAngles +
+                                  "\n larghezza: " + worldWidth + " altezza: " + worldHeight;
+            }
+            else
+            {
+                debugText.text += "\n Non ho preso nulla";
+            }
+        }
+    }
+
+
+    //second approach, using the PassthroughCameraUtil to place objects in the scene, funziona benissimo ma ha un problema: realtime, the raycast can hit only on the FOV
     public void placePaint_PC(DetectionInput data)
     {
         if (data == null || data.detected_quadri == null || data.detected_quadri.Length == 0)
@@ -186,6 +289,10 @@ public class PaintingPlacer : MonoBehaviour
     }
 
 
+// ---------------------- finish second approach ----------------------
+
+
+    // First approach, not working properly becouse it not taking into account all the camera parameters
     public void placePaint(DetectionInput data)
     {
         if (data == null || data.detected_quadri == null || data.detected_quadri.Length == 0)
@@ -345,4 +452,27 @@ public class PaintingPlacer : MonoBehaviour
         // e. Crea e restituisci il raggio finale con l'origine e la direzione corrette.
         return new Ray(historicalPosition, finalDirection.normalized);
     }
+
+// ---------------------- end first approach ----------------------
+
+
+    //Just a test method to place an object with a raycast from the controller to the scene map
+    /*
+       public Transform controller;
+
+     void Update()
+    {
+        if (OVRInput.GetDown(OVRInput.RawButton.RIndexTrigger))
+        {
+            var ray = new Ray(controller.position, controller.forward);
+
+            if (Physics.Raycast(ray, out var hit, 100f, sceneMeshLayer))
+            {
+
+                Instantiate(objectToPlace, hit.point, Quaternion.LookRotation(hit.normal));
+
+            }
+
+        }
+    }*/
 }

@@ -132,7 +132,7 @@ public class UnityHTTPServer : MonoBehaviour
                 if (debugText != null)
                     debugText.text =
                         $"Server running on Quest\nConnect to: http://{localIP}:{currentPort}/post_detections";
-
+                
                 serverStarted = true;
                 isListening = true;
 

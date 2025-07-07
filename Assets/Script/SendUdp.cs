@@ -4,9 +4,11 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using Meta.Net.NativeWebSocket;
+using Meta.XR;
 using PassthroughCameraSamples;
 using TMPro;
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 
 [Serializable]
 public class FrameData
@@ -37,12 +39,24 @@ public class SendUdp : MonoBehaviour
 
     private WebSocket websocket;
 
+    const float originalScreenWidth = 1280.0f;
+    const float originalScreenHeight = 960.0f;
+
+    private EnvironmentRaycastManager environmentRaycastManager;
+
     private IEnumerator Start()
     {
         // Aspetta che la webcam sia pronta
         while (manager.WebCamTexture == null || !manager.WebCamTexture.isPlaying)
         {
             yield return null;
+        }
+
+        environmentRaycastManager = FindFirstObjectByType<EnvironmentRaycastManager>();
+        if (environmentRaycastManager == null)
+        {
+            Debug.LogError(
+                "environmentRaycastManager non trovato.");
         }
 
         int width = manager.WebCamTexture.width;
@@ -169,14 +183,13 @@ public class SendUdp : MonoBehaviour
 
                 byte[] jpgBytes = reusableTexture.EncodeToJPG(80);
 
-
                 // Invio in background per non bloccare il main thread
-                Task.Run(() => SendFrameB(camPosition, camRotation, jpgBytes));
+                Task.Run(() => SendFrame(camPosition, camRotation, jpgBytes));
             }
         }
     }
 
-    async private void SendFrameB(Vector3 camPosition, Quaternion camRotation, byte[] jpgBytes)
+    async private void SendFrame(Vector3 camPosition, Quaternion camRotation, byte[] jpgBytes)
     {
         FrameData dataToSend = new FrameData
         {
@@ -219,4 +232,44 @@ public class SendUdp : MonoBehaviour
         if (reusableTexture != null)
             Destroy(reusableTexture);
     }
+
+    /*
+    test of raycast grid more points
+    public void RaycastGridOnScreen(int gridSize)
+    {
+        if (environmentRaycastManager == null)
+        {
+            Debug.LogError(" environmentRaycastManager non assegnati.");
+            return;
+        }
+
+
+        float stepX = originalScreenWidth / gridSize;
+        float stepY = originalScreenHeight / gridSize;
+
+        for (int i = 0; i < gridSize; i++)
+        {
+            for (int j = 0; j < gridSize; j++)
+            {
+                int x = (int)((i + 0.5f) * stepX);
+                int y = (int)((j + 0.5f) * stepY);
+                Ray ray = PassthroughCameraUtils.ScreenPointToRayInWorld(PassthroughCameraEye.Left,
+                    new Vector2Int(x, y));
+                if (environmentRaycastManager.Raycast(ray, out EnvironmentRaycastHit hit, 300))
+                {
+                }
+            }
+        }
+    }
+
+    public TimeSpan MeasureRaycastGridTime(int gridSize)
+    {
+        var stopwatch = new Stopwatch();
+        stopwatch.Start();
+        RaycastGridOnScreen(gridSize);
+        stopwatch.Stop();
+        debugText.text +=
+            $"\n Tempo impiegato per il raycast su una griglia {gridSize}x{gridSize}: {stopwatch.ElapsedMilliseconds} ms";
+        return stopwatch.Elapsed;
+    }*/
 }
