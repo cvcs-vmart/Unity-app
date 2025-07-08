@@ -1,6 +1,6 @@
 using System;
+using System.Collections.Generic;
 using Meta.XR;
-using Meta.XR.MRUtilityKit;
 using PassthroughCameraSamples;
 using TMPro;
 using UnityEngine;
@@ -50,6 +50,8 @@ public class PaintingPlacer : MonoBehaviour
     [Tooltip("Il prefab da istanziare nella scena. Assicurati che sia un piano 1x1 con pivot al centro.")]
     public GameObject objectToPlace;
 
+    public GameObject panel;
+
     [Tooltip("La distanza massima a cui il raggio cercherà una superficie reale.")]
     public float maxPlacementDistance = 2000f;
 
@@ -60,8 +62,13 @@ public class PaintingPlacer : MonoBehaviour
     public TextMeshProUGUI debugText;
 
     public LayerMask sceneMeshLayer; // the mesh of the scene where the object will be placed
+    public LayerMask paintingLayer; // layer of the paintings
 
     private MeshFilter map;
+
+    public Transform controllerRightHand;
+
+    static public List<String> paintingPannels = new List<string>();
 
     void Start()
     {
@@ -194,6 +201,12 @@ public class PaintingPlacer : MonoBehaviour
                 float worldWidth = Vector3.Distance(position, rightPoint) * 2.0f;
                 float worldHeight = Vector3.Distance(position, topPoint) * 2.0f;
 
+
+                Vector3 offsetDirection = centerHit.normal.normalized;
+// Sposta leggermente l'oggetto indietro rispetto al muro (es. 0.01 unità)
+                float offsetDistance = 0.01f;
+                instantiatedObject.transform.position += offsetDirection * offsetDistance;
+
                 // Applica la scala. Assumendo che l'oggetto sia 1x1, la scala è direttamente la dimensione calcolata.
                 // Manteniamo la scala Z originale del prefab per evitare di dargli uno spessore strano.
                 instantiatedObject.transform.localScale =
@@ -201,6 +214,11 @@ public class PaintingPlacer : MonoBehaviour
 
                 debugText.text += "\n posizionato: " + position + " con rotazione: " + rotation.eulerAngles +
                                   "\n larghezza: " + worldWidth + " altezza: " + worldHeight;
+
+                instantiatedObject.layer = LayerMask.NameToLayer("Paintings");
+                ;
+
+                instantiatedObject.name = $"Painting:{quadro.GetHashCode()}";
             }
             else
             {
@@ -473,23 +491,31 @@ public class PaintingPlacer : MonoBehaviour
 // ---------------------- end first approach ----------------------
 
 
-    //Just a test method to place an object with a raycast from the controller to the scene map
-    /*
-       public Transform controller;
-
-     void Update()
+    void Update()
     {
         if (OVRInput.GetDown(OVRInput.RawButton.RIndexTrigger))
         {
-            var ray = new Ray(controller.position, controller.forward);
+            var ray = new Ray(controllerRightHand.position, controllerRightHand.forward);
 
-            if (Physics.Raycast(ray, out var hit, 100f, sceneMeshLayer))
+            if (Physics.Raycast(ray, out var hit, 100f, paintingLayer))
             {
+                debugText.text +=
+                    $"\nHai colpito: {hit.collider.gameObject.name} (Layer: {LayerMask.LayerToName(hit.collider.gameObject.layer)}) ";
+                var id = hit.collider.gameObject.name.Split(":")[1];
 
-                Instantiate(objectToPlace, hit.point, Quaternion.LookRotation(hit.normal));
+                if (!paintingPannels.Contains(id))
+                {
+                    paintingPannels.Add(id);
 
+                    var tr = PassthroughCameraUtils.GetCameraPoseInWorld(PassthroughCameraEye.Left);
+
+                    Vector3 panelPosition = tr.position + tr.forward * 0.5f;
+                    Quaternion panelRotation = Quaternion.Euler(tr.rotation.eulerAngles.x + 20f,
+                        mainCamera.transform.eulerAngles.y, mainCamera.transform.eulerAngles.z);
+                    GameObject instantiatedObject = Instantiate(panel, panelPosition, panelRotation);
+                    instantiatedObject.name = $"panel:{id}";
+                }
             }
-
         }
-    }*/
+    }
 }
