@@ -88,6 +88,10 @@ public class PaintingPlacer : MonoBehaviour
 
     static public Dictionary<int, GameObject> paintingPannels = new Dictionary<int, GameObject>();
 
+    public List<GameObject> panels = new();
+
+    public bool showLayerPanel = true;
+
     void Start()
     {
         if (mainCamera == null)
@@ -151,6 +155,16 @@ public class PaintingPlacer : MonoBehaviour
         OVRScene.RequestSpaceSetup();
     }
 
+    public void toggleShowLayerPanel()
+    {
+        showLayerPanel = !showLayerPanel;
+        foreach (var panel in panels)
+        {
+            var renderer = panel.GetComponent<Renderer>();
+            if (renderer != null) renderer.enabled = showLayerPanel;
+        }
+    }
+
 
     // terzo metodo, fai il raycast sulle pareti della stanza
     public void placePaint_Room(DetectionInput data)
@@ -172,9 +186,13 @@ public class PaintingPlacer : MonoBehaviour
                 Vector3 position = centerHit.point;
                 Quaternion rotation = Quaternion.LookRotation(centerHit.normal);
                 GameObject instantiatedObject = Instantiate(objectToPlace, position, rotation);
+                panels.Add(instantiatedObject);
+                
+                var renderer = instantiatedObject.GetComponent<Renderer>();
+                if (renderer != null) renderer.enabled = showLayerPanel;
+
                 debugText.text += "\n posizionato: " + position + " con rotazione: " + rotation.eulerAngles;
-
-
+                
                 Ray rightRay = ScreenPointToRayInWorldOnHistoricalPos(PassthroughCameraEye.Left,
                     new Vector2Int((int)(quadro.centerX + quadro.nWidth / 2),
                         960 - (int)quadro.centerY), // la coordinate Y sono invertite
@@ -531,9 +549,9 @@ public class PaintingPlacer : MonoBehaviour
                         mainCamera.transform.eulerAngles.y, mainCamera.transform.eulerAngles.z);
                     GameObject instantiatedObject = Instantiate(panel, panelPosition, panelRotation);
                     instantiatedObject.name = $"panel:{id}";
-                    
+
                     paintingPannels.Add(id, instantiatedObject);
-                    
+
                     Debug.LogWarning("ok ho piazzato: ");
                     getRetrival(id);
                 }
@@ -552,8 +570,8 @@ public class PaintingPlacer : MonoBehaviour
         // Crea il payload JSON con l'id
         RetrievalRequestData requestData = new RetrievalRequestData { id = id };
         var payload = JsonUtility.ToJson(requestData);
-            
-       
+
+
         // Avvia una coroutine per la richiesta HTTP POST
         StartCoroutine(PostRequest(url, payload));
     }
@@ -583,4 +601,3 @@ public class PaintingPlacer : MonoBehaviour
         }
     }
 }
-
