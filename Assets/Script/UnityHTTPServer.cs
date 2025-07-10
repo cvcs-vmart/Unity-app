@@ -5,9 +5,9 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
-using PassthroughCameraSamples;
 using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 // Per List
 // 192.168.204.246
@@ -314,7 +314,8 @@ public class UnityHTTPServer : MonoBehaviour
 
                     // Esegui il parsing del corpo multipart
                     ParsedMultipartData parsedData = ParseMultipartData(requestBodyBytes, boundary);
-                    Debug.Log($"Parsed {parsedData.ImageDatas.Count} images and ID: '{parsedData.Id}' from the request.");
+                    Debug.Log(
+                        $"Parsed {parsedData.ImageDatas.Count} images and ID: '{parsedData.Id}' from the request.");
 
                     // Invia i dati delle immagini al thread principale di Unity per creare le Texture2D
                     var dispatcher = UnityMainThreadDispatcher.Instance();
@@ -326,7 +327,6 @@ public class UnityHTTPServer : MonoBehaviour
                             {
                                 if (paintingPlacer != null)
                                 {
-                                    
                                     List<Texture2D> receivedPaintings = new List<Texture2D>();
                                     foreach (var imageData in parsedData.ImageDatas)
                                     {
@@ -343,8 +343,20 @@ public class UnityHTTPServer : MonoBehaviour
                                                 "Impossibile caricare i dati di un'immagine in una Texture2D.");
                                         }
                                     }
-                                    
-                                    debugText.text += $"\nReceived {receivedPaintings.Count} paintings for ID: {parsedData.Id}.";
+
+                                    debugText.text +=
+                                        $"\nReceived {receivedPaintings.Count} paintings for ID: {parsedData.Id}.";
+
+                                    var id = int.Parse(parsedData.Id);
+                                    if (PaintingPlacer.paintingPannels.ContainsKey(id))
+                                    {
+                                        addPainting(receivedPaintings, PaintingPlacer.paintingPannels[id]);
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError(
+                                            $"ID {parsedData.Id} non trovato in PaintingPlacer.paintingPannels.");
+                                    }
                                 }
                                 else
                                 {
@@ -369,6 +381,67 @@ public class UnityHTTPServer : MonoBehaviour
                     }
                 }
             }
+            else if (request.HttpMethod == "POST" && request.Url.AbsolutePath == "/post_resnet")
+            {
+                string requestBody;
+                using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
+                {
+                    requestBody = reader.ReadToEnd();
+                }
+
+                Debug.Log($"Received POST to /post_resnet: {requestBody}");
+
+                // Deserializza il JSON sul thread principale di Unity con gestione dell'assenza del dispatcher
+                var dispatcher = UnityMainThreadDispatcher.Instance();
+                if (dispatcher != null)
+                {
+                    string capturedRequestBody = requestBody;
+                    dispatcher.Enqueue(() =>
+                    {
+                        try
+                        {
+                            if (debugText != null) debugText.text += "\n" + capturedRequestBody;
+                            // Chiamata diretta al piazzamento quadri
+                            if (paintingPlacer != null)
+                            {
+                                Debug.LogError("debug text " + capturedRequestBody);
+
+                                ResnetResponse data = JsonUtility.FromJson<ResnetResponse>(capturedRequestBody);
+
+                                var panel = PaintingPlacer.paintingPannels[data.id];
+                                if (panel != null)
+                                {
+                                    foreach (Transform child in panel.transform)
+                                    {
+                                        if (child.name == "prediction")
+                                        {
+                                            var t = child.GetComponent<TextMeshProUGUI>();
+                                            t.text = $"Stile: {data.style} - Genere: {data.genre}";
+                                        }
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                Debug.LogError("paintingPlacer non assegnato su UnityHTTPServer!");
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                            Debug.LogError($"Error processing received data: {e.Message}\nJSON: {capturedRequestBody}");
+                        }
+                    });
+                }
+                else
+                {
+                    Debug.LogError(
+                        "UnityMainThreadDispatcher non disponibile. Impossibile elaborare i dati ricevuti sul thread principale di Unity.");
+                }
+
+                // Invia una risposta di successo
+                RespondWithJson(response, "{\"status\": \"success\", \"message\": \"Detections received by Unity\"}",
+                    (int)HttpStatusCode.OK);
+            }
             else
             {
                 RespondWithJson(response,
@@ -390,6 +463,92 @@ public class UnityHTTPServer : MonoBehaviour
         {
             response.Close();
         }
+    }
+
+    public void addPainting(List<Texture2D> paintings, GameObject panel)
+    {
+        if (panel == null)
+        {
+            Debug.LogError("Il GameObject 'panel' non è stato assegnato!");
+            return;
+        }
+
+        // Trova i componenti Image per nome
+        // Un modo robusto è cercare tra i figli del panel
+        Image img1 = null;
+        Image img2 = null;
+        Image img3 = null;
+
+        foreach (Transform child in panel.transform)
+        {
+            if (child.name == "1")
+            {
+                img1 = child.GetComponent<Image>();
+                img1.preserveAspect = true;
+            }
+            else if (child.name == "2")
+            {
+                img2 = child.GetComponent<Image>();
+                img2.preserveAspect = true;
+            }
+            else if (child.name == "3")
+            {
+                img3 = child.GetComponent<Image>();
+                img3.preserveAspect = true;
+            }
+        }
+
+        // Controlla se abbiamo trovato tutte le Image e se ci sono abbastanza painting
+        if (img1 == null || img2 == null || img3 == null)
+        {
+            Debug.LogError(
+                "Non tutte le Image (1, 2, 3) sono state trovate come figli del panel o non hanno un componente Image!");
+            return;
+        }
+
+        if (paintings.Count < 3)
+        {
+            Debug.LogError("La lista 'paintings' deve contenere almeno 3 Texture2D per popolare tutte le Image.");
+            return;
+        }
+
+        // Assegna le texture alle Image trovate
+        // Ricorda: Texture2D deve essere convertita in Sprite per il componente Image
+        AssignTextureToImage(img1, paintings[0]);
+        AssignTextureToImage(img2, paintings[1]);
+        AssignTextureToImage(img3, paintings[2]);
+
+        Debug.Log("Painting assegnati con successo alle Image del panel!");
+    }
+
+    private void AssignTextureToImage(Image targetImage, Texture2D textureToAssign)
+    {
+        if (targetImage == null || textureToAssign == null)
+        {
+            Debug.LogWarning("Tentativo di assegnare una texture a un'Image nulla o una texture nulla.");
+            return;
+        }
+
+        // 1. Crea lo Sprite dalla Texture2D
+        Sprite newSprite = Sprite.Create(textureToAssign,
+            new Rect(0, 0, textureToAssign.width, textureToAssign.height),
+            new Vector2(0.5f, 0.5f)); // Pivot al centro
+
+        targetImage.sprite = newSprite;
+
+        // 2. Calcola le nuove dimensioni per adattarsi all'altezza del targetImage
+        // Ottieni l'altezza attuale del RectTransform del targetImage
+        float targetHeight = targetImage.rectTransform.rect.height;
+
+        // Calcola l'aspect ratio della texture originale
+        float textureAspectRatio = (float)textureToAssign.width / textureToAssign.height;
+
+        // Calcola la nuova larghezza basata sull'altezza target e l'aspect ratio
+        float newWidth = targetHeight * textureAspectRatio;
+
+        // 3. Applica le nuove dimensioni al RectTransform
+        // Imposta sizeDelta.x sulla nuova larghezza calcolata e sizeDelta.y sull'altezza target
+        targetImage.rectTransform.sizeDelta = new Vector2(newWidth, targetHeight);
     }
 
     private void RespondWithJson(HttpListenerResponse response, string jsonString, int statusCode)
@@ -514,21 +673,21 @@ public class UnityHTTPServer : MonoBehaviour
         public List<byte[]> ImageDatas { get; } = new List<byte[]>();
         public string Id { get; set; }
     }
-    
+
     private ParsedMultipartData ParseMultipartData(byte[] requestBody, string boundary)
     {
         var parsedData = new ParsedMultipartData();
         byte[] boundaryBytes = Encoding.UTF8.GetBytes("--" + boundary);
-    
+
         List<byte[]> parts = SplitByteArray(requestBody, boundaryBytes);
-    
+
         foreach (var part in parts)
         {
             if (part.Length == 0) continue;
-    
+
             int headerEndIndex = FindHeaderEnd(part);
             if (headerEndIndex == -1) continue;
-    
+
             // Estrai gli header come stringa per analizzarli
             string headersString = Encoding.UTF8.GetString(part, 0, headerEndIndex);
             string contentDisposition = null;
@@ -544,9 +703,9 @@ public class UnityHTTPServer : MonoBehaviour
                     }
                 }
             }
-    
+
             if (contentDisposition == null) continue;
-    
+
             string name = null;
             string[] dispositionParts = contentDisposition.Split(';');
             foreach (string dispositionPart in dispositionParts)
@@ -558,20 +717,20 @@ public class UnityHTTPServer : MonoBehaviour
                     break;
                 }
             }
-    
+
             if (string.IsNullOrEmpty(name)) continue;
-    
+
             // Estrai il contenuto dopo gli header
             int contentStartIndex = headerEndIndex + 4; // Salta \r\n\r\n
             if (contentStartIndex >= part.Length) continue;
-            
+
             // Rimuovi l'ultimo \r\n che precede il boundary successivo
             int contentLength = part.Length - contentStartIndex - 2;
             if (contentLength <= 0) continue;
-    
+
             byte[] contentBytes = new byte[contentLength];
             Array.Copy(part, contentStartIndex, contentBytes, 0, contentLength);
-    
+
             if (name.Equals("images", StringComparison.OrdinalIgnoreCase))
             {
                 parsedData.ImageDatas.Add(contentBytes);
@@ -581,7 +740,7 @@ public class UnityHTTPServer : MonoBehaviour
                 parsedData.Id = Encoding.UTF8.GetString(contentBytes);
             }
         }
-    
+
         return parsedData;
     }
 
@@ -636,4 +795,3 @@ public class UnityHTTPServer : MonoBehaviour
         return parts;
     }
 }
-

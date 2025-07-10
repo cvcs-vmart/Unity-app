@@ -50,6 +50,14 @@ public class DetectionInput
 }
 
 [Serializable]
+public class ResnetResponse
+{
+    public string style;
+    public string genre;
+    public int id;
+}
+
+[Serializable]
 public class RetrievalRequestData
 {
     public int id;
