@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using PassthroughCameraSamples;
 using TMPro;
 using UnityEngine;
 
@@ -136,7 +138,6 @@ public class UnityHTTPServer : MonoBehaviour
                     port.text = currentPort + "";
                     ip.text = localIP;
                 }
-
 
                 serverStarted = true;
                 isListening = true;
@@ -292,9 +293,84 @@ public class UnityHTTPServer : MonoBehaviour
                 RespondWithJson(response, "{\"status\": \"success\", \"message\": \"Detections received by Unity\"}",
                     (int)HttpStatusCode.OK);
             }
+            else if (request.HttpMethod == "POST" && request.Url.AbsolutePath == "/post_retrieval")
+            {
+                Debug.Log("Received POST to /post_retrieval");
+                // Estrai il boundary dal Content-Type header
+                string boundary = GetBoundary(request.ContentType);
+                if (string.IsNullOrEmpty(boundary))
+                {
+                    RespondWithJson(response,
+                        "{\"status\": \"error\", \"message\": \"Invalid Content-Type for multipart request\"}",
+                        (int)HttpStatusCode.BadRequest);
+                    return;
+                }
+
+                // Leggi il corpo della richiesta
+                using (var memoryStream = new MemoryStream())
+                {
+                    request.InputStream.CopyTo(memoryStream);
+                    byte[] requestBodyBytes = memoryStream.ToArray();
+
+                    // Esegui il parsing del corpo multipart
+                    ParsedMultipartData parsedData = ParseMultipartData(requestBodyBytes, boundary);
+                    Debug.Log($"Parsed {parsedData.ImageDatas.Count} images and ID: '{parsedData.Id}' from the request.");
+
+                    // Invia i dati delle immagini al thread principale di Unity per creare le Texture2D
+                    var dispatcher = UnityMainThreadDispatcher.Instance();
+                    if (dispatcher != null)
+                    {
+                        dispatcher.Enqueue(() =>
+                        {
+                            try
+                            {
+                                if (paintingPlacer != null)
+                                {
+                                    
+                                    List<Texture2D> receivedPaintings = new List<Texture2D>();
+                                    foreach (var imageData in parsedData.ImageDatas)
+                                    {
+                                        // Crea una nuova texture. Le dimensioni non sono importanti, LoadImage le adatterà.
+                                        Texture2D tex = new Texture2D(2, 2);
+                                        // Carica i dati dell'immagine (es. JPG o PNG) nella texture
+                                        if (tex.LoadImage(imageData))
+                                        {
+                                            receivedPaintings.Add(tex);
+                                        }
+                                        else
+                                        {
+                                            Debug.LogError(
+                                                "Impossibile caricare i dati di un'immagine in una Texture2D.");
+                                        }
+                                    }
+                                    
+                                    debugText.text += $"\nReceived {receivedPaintings.Count} paintings for ID: {parsedData.Id}.";
+                                }
+                                else
+                                {
+                                    Debug.LogError("paintingPlacer non assegnato su UnityHTTPServer!");
+                                }
+                            }
+                            catch (Exception e)
+                            {
+                                Debug.LogError($"Error processing received image data: {e.Message}");
+                            }
+                        });
+                        RespondWithJson(response,
+                            "{\"status\": \"success\", \"message\": \"Images and ID received by Unity\"}",
+                            (int)HttpStatusCode.OK);
+                    }
+                    else
+                    {
+                        Debug.LogError("UnityMainThreadDispatcher non disponibile.");
+                        RespondWithJson(response,
+                            "{\"status\": \"error\", \"message\": \"Internal server error (dispatcher not found)\"}",
+                            (int)HttpStatusCode.InternalServerError);
+                    }
+                }
+            }
             else
             {
-                // Gestisci altre richieste o restituisci un errore 404
                 RespondWithJson(response,
                     "{\"status\": \"error\", \"message\": \"Endpoint not found or method not allowed\"}",
                     (int)HttpStatusCode.NotFound);
@@ -330,6 +406,27 @@ public class UnityHTTPServer : MonoBehaviour
         {
             Debug.LogError($"Could not write response: {ex.Message}");
         }
+    }
+
+    // Funzione di utilità per trovare un array di byte in un altro array di byte
+    private int IndexOf(byte[] searchIn, byte[] searchBytes, int start)
+    {
+        for (int i = start; i <= searchIn.Length - searchBytes.Length; i++)
+        {
+            bool found = true;
+            for (int j = 0; j < searchBytes.Length; j++)
+            {
+                if (searchIn[i + j] != searchBytes[j])
+                {
+                    found = false;
+                    break;
+                }
+            }
+
+            if (found) return i;
+        }
+
+        return -1;
     }
 
     void OnApplicationQuit()
@@ -395,4 +492,148 @@ public class UnityHTTPServer : MonoBehaviour
             listenerThread = null;
         }
     }
+
+    private string GetBoundary(string contentType)
+    {
+        if (string.IsNullOrWhiteSpace(contentType)) return null;
+        string[] parts = contentType.Split(';');
+        foreach (string part in parts)
+        {
+            string trimmedPart = part.Trim();
+            if (trimmedPart.StartsWith("boundary="))
+            {
+                return trimmedPart.Substring("boundary=".Length);
+            }
+        }
+
+        return null;
+    }
+
+    private class ParsedMultipartData
+    {
+        public List<byte[]> ImageDatas { get; } = new List<byte[]>();
+        public string Id { get; set; }
+    }
+    
+    private ParsedMultipartData ParseMultipartData(byte[] requestBody, string boundary)
+    {
+        var parsedData = new ParsedMultipartData();
+        byte[] boundaryBytes = Encoding.UTF8.GetBytes("--" + boundary);
+    
+        List<byte[]> parts = SplitByteArray(requestBody, boundaryBytes);
+    
+        foreach (var part in parts)
+        {
+            if (part.Length == 0) continue;
+    
+            int headerEndIndex = FindHeaderEnd(part);
+            if (headerEndIndex == -1) continue;
+    
+            // Estrai gli header come stringa per analizzarli
+            string headersString = Encoding.UTF8.GetString(part, 0, headerEndIndex);
+            string contentDisposition = null;
+            using (var reader = new StringReader(headersString))
+            {
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    if (line.StartsWith("Content-Disposition:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        contentDisposition = line;
+                        break;
+                    }
+                }
+            }
+    
+            if (contentDisposition == null) continue;
+    
+            string name = null;
+            string[] dispositionParts = contentDisposition.Split(';');
+            foreach (string dispositionPart in dispositionParts)
+            {
+                string trimmedPart = dispositionPart.Trim();
+                if (trimmedPart.StartsWith("name=", StringComparison.OrdinalIgnoreCase))
+                {
+                    name = trimmedPart.Substring("name=".Length).Trim('"');
+                    break;
+                }
+            }
+    
+            if (string.IsNullOrEmpty(name)) continue;
+    
+            // Estrai il contenuto dopo gli header
+            int contentStartIndex = headerEndIndex + 4; // Salta \r\n\r\n
+            if (contentStartIndex >= part.Length) continue;
+            
+            // Rimuovi l'ultimo \r\n che precede il boundary successivo
+            int contentLength = part.Length - contentStartIndex - 2;
+            if (contentLength <= 0) continue;
+    
+            byte[] contentBytes = new byte[contentLength];
+            Array.Copy(part, contentStartIndex, contentBytes, 0, contentLength);
+    
+            if (name.Equals("images", StringComparison.OrdinalIgnoreCase))
+            {
+                parsedData.ImageDatas.Add(contentBytes);
+            }
+            else if (name.Equals("id", StringComparison.OrdinalIgnoreCase))
+            {
+                parsedData.Id = Encoding.UTF8.GetString(contentBytes);
+            }
+        }
+    
+        return parsedData;
+    }
+
+    private int FindHeaderEnd(byte[] data)
+    {
+        byte[] sequence = { (byte)'\r', (byte)'\n', (byte)'\r', (byte)'\n' }; // CRLF CRLF
+        for (int i = 0; i < data.Length - sequence.Length; i++)
+        {
+            bool found = true;
+            for (int j = 0; j < sequence.Length; j++)
+            {
+                if (data[i + j] != sequence[j])
+                {
+                    found = false;
+                    break;
+                }
+            }
+
+            if (found) return i;
+        }
+
+        return -1;
+    }
+
+    private List<byte[]> SplitByteArray(byte[] source, byte[] separator)
+    {
+        var parts = new List<byte[]>();
+        int lastIndex = 0;
+        int currentIndex;
+        while ((currentIndex = IndexOf(source, separator, lastIndex)) != -1)
+        {
+            int length = currentIndex - lastIndex;
+            if (length > 0)
+            {
+                byte[] part = new byte[length];
+                Array.Copy(source, lastIndex, part, 0, length);
+                parts.Add(part);
+            }
+
+            lastIndex = currentIndex + separator.Length;
+        }
+
+        // Aggiungi l'ultima parte se esiste
+        if (lastIndex < source.Length)
+        {
+            int length = source.Length - lastIndex;
+            byte[] part = new byte[length];
+            Array.Copy(source, lastIndex, part, 0, length);
+            parts.Add(part);
+        }
+
+        return parts;
+    }
 }
+

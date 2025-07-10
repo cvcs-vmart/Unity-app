@@ -1,9 +1,12 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Text;
 using Meta.XR;
 using PassthroughCameraSamples;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Networking;
 using Debug = UnityEngine.Debug;
 
 [Serializable]
@@ -43,6 +46,13 @@ public class DetectionInput
 {
     public DetectedQuadroData[] detected_quadri;
     public CameraPoseData camera_pose;
+    public int id;
+}
+
+[Serializable]
+public class RetrievalRequestData
+{
+    public int id;
 }
 
 public class PaintingPlacer : MonoBehaviour
@@ -68,7 +78,7 @@ public class PaintingPlacer : MonoBehaviour
 
     public Transform controllerRightHand;
 
-    static public List<String> paintingPannels = new List<string>();
+    static public Dictionary<int, GameObject> paintingPannels = new Dictionary<int, GameObject>();
 
     void Start()
     {
@@ -212,13 +222,13 @@ public class PaintingPlacer : MonoBehaviour
                 instantiatedObject.transform.localScale =
                     new Vector3(worldWidth, worldHeight, instantiatedObject.transform.localScale.z);
 
-                debugText.text += "\n posizionato: " + position + " con rotazione: " + rotation.eulerAngles +
-                                  "\n larghezza: " + worldWidth + " altezza: " + worldHeight;
 
                 instantiatedObject.layer = LayerMask.NameToLayer("Paintings");
-                ;
 
-                instantiatedObject.name = $"Painting:{quadro.GetHashCode()}";
+
+                instantiatedObject.name = $"Painting:{data.id}";
+                debugText.text += "\n posizionato: " + position + " con rotazione: " + rotation.eulerAngles +
+                                  "\n larghezza: " + worldWidth + " altezza: " + worldHeight + " id: " + data.id;
             }
             else
             {
@@ -501,12 +511,11 @@ public class PaintingPlacer : MonoBehaviour
             {
                 debugText.text +=
                     $"\nHai colpito: {hit.collider.gameObject.name} (Layer: {LayerMask.LayerToName(hit.collider.gameObject.layer)}) ";
-                var id = hit.collider.gameObject.name.Split(":")[1];
+                var id_str = hit.collider.gameObject.name.Split(":")[1];
+                var id = int.Parse(id_str);
 
-                if (!paintingPannels.Contains(id))
+                if (!paintingPannels.ContainsKey(id))
                 {
-                    paintingPannels.Add(id);
-
                     var tr = PassthroughCameraUtils.GetCameraPoseInWorld(PassthroughCameraEye.Left);
 
                     Vector3 panelPosition = tr.position + tr.forward * 0.5f;
@@ -514,8 +523,56 @@ public class PaintingPlacer : MonoBehaviour
                         mainCamera.transform.eulerAngles.y, mainCamera.transform.eulerAngles.z);
                     GameObject instantiatedObject = Instantiate(panel, panelPosition, panelRotation);
                     instantiatedObject.name = $"panel:{id}";
+                    
+                    paintingPannels.Add(id, instantiatedObject);
+                    
+                    Debug.LogWarning("ok ho piazzato: ");
+                    getRetrival(id);
                 }
             }
         }
     }
+
+    public void getRetrival(int id)
+    {
+        Debug.LogWarning("faccio partire la richiesta POST a: ");
+        var ip = "192.168.186.71";
+        var port = 3333;
+        var endpoint = "/for_resnet_and_dino_ret";
+        var url = $"http://{ip}:{port}{endpoint}";
+
+        // Crea il payload JSON con l'id
+        RetrievalRequestData requestData = new RetrievalRequestData { id = id };
+        var payload = JsonUtility.ToJson(requestData);
+            
+       
+        // Avvia una coroutine per la richiesta HTTP POST
+        StartCoroutine(PostRequest(url, payload));
+    }
+
+    private IEnumerator PostRequest(string url, string json)
+    {
+        Debug.LogWarning("sono nella corunitne ");
+        using (var www = new UnityWebRequest(url, "POST"))
+        {
+            Debug.LogWarning("sono nella using ");
+            byte[] bodyRaw = Encoding.UTF8.GetBytes(json);
+            www.uploadHandler = new UploadHandlerRaw(bodyRaw);
+            www.downloadHandler = new DownloadHandlerBuffer();
+            www.SetRequestHeader("Content-Type", "application/json");
+            Debug.LogWarning("prima di invio ");
+            yield return www.SendWebRequest();
+            Debug.LogWarning("dopo di invio ");
+
+            if (www.result == UnityWebRequest.Result.Success)
+            {
+                Debug.Log("Risposta server: " + www.downloadHandler.text);
+            }
+            else
+            {
+                Debug.LogError("Errore richiesta: " + www.error);
+            }
+        }
+    }
 }
+
